@@ -292,13 +292,18 @@ class StudentAIAnalysisViewSet(viewsets.ReadOnlyModelViewSet):
                 faculty_profile = getattr(user, 'faculty_profile', None)
                 if faculty_profile and faculty_profile.department:
                     qs = qs.filter(student__department=faculty_profile.department)
-        elif user.role == 'MENTOR':
-            # Scoped strictly to Mentor's assigned cohort
+        elif user.role in ['MENTOR', 'FACULTY']:
+            # Scoped strictly to Mentor's assigned cohort or Faculty's department
             assigned_ids = MentorAssignment.objects.filter(
                 mentor__user=user,
                 is_active=True
             ).values_list('student_id', flat=True)
-            qs = qs.filter(student_id__in=assigned_ids)
+            if assigned_ids.exists():
+                qs = qs.filter(student_id__in=assigned_ids)
+            else:
+                faculty_profile = getattr(user, 'faculty_profile', None)
+                if faculty_profile and faculty_profile.department:
+                    qs = qs.filter(student__department=faculty_profile.department)
         elif user.role == 'STUDENT':
             # Confidential self-view
             qs = qs.filter(student__user=user)
@@ -428,7 +433,7 @@ class StudentAIAnalysisViewSet(viewsets.ReadOnlyModelViewSet):
                     'message': "Mentors can only review early-warning assessments for their assigned students.",
                     'code': 'MENTOR_COHORT_VIOLATION'
                 }, status=status.HTTP_403_FORBIDDEN)
-        elif user.role not in ['PRINCIPAL', 'HOD', 'MANAGEMENT']:
+        elif user.role not in ['PRINCIPAL', 'HOD', 'MANAGEMENT', 'FACULTY']:
             return Response({
                 'success': False,
                 'message': "Unauthorized to review academic risk assessments.",

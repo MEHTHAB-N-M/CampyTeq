@@ -124,8 +124,8 @@ class LibraryRequestViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        if user.role not in ["MENTOR", "PRINCIPAL"]:
-            raise permissions.exceptions.PermissionDenied("Only Mentors can submit library requests.")
+        if user.role not in ["MENTOR", "FACULTY", "PRINCIPAL"]:
+            raise permissions.exceptions.PermissionDenied("Only Faculty and Mentors can submit library requests.")
         
         req = serializer.save(
             college=user.college,

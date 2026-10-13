@@ -4,28 +4,22 @@
 
 ```text
                                   +-----------------------+
-                                  |   Web Browser / App   |
-                                  |   (Next.js Frontend)  |
+                                  |   Web Browser / SPA   |
+                                  |     (React + Vite)    |
                                   +-----------+-----------+
                                               |
                                               | HTTPS / JSON (JWT)
                                               v
-+-----------------------+         +-----------+-----------+         +-----------------------+
-|  Mobile App (Expo)    +-------->+    Django REST API    +<--------+  CV / Camera Gateway  |
-|  (Dedicated App)      |         |     (/api/v1/...)     |         |  (Detection Metadata) |
-+-----------------------+         +-----+-----------+-----+         +-----------------------+
-                                        |           |
-                                        v           v
-                                   +----+---+   +---+----+
-                                   |Postgres|   | Redis  |
-                                   |   DB   |   | (Queue)|
-                                   +--------+   +---+----+
-                                                    |
-                                                    v
-                                                +---+----+
-                                                | Celery |
-                                                | Worker |
-                                                +--------+
+                                  +-----------+-----------+         +-----------------------+
+                                  |    Django REST API    |<--------+  Python AI / Edge CV  |
+                                  |     (/api/v1/...)     |         |  (Detection Metadata) |
+                                  +-----+-----------+-----+         +-----------------------+
+                                        |
+                                        v
+                                   +----+---+
+                                   |Postgres|
+                                   |   DB   |
+                                   +--------+
 ```
 
 ## 2. Multi-Tenancy Design

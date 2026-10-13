@@ -15,11 +15,11 @@ from .serializers import (
 
 
 class IsCameraViewer(permissions.BasePermission):
-    """Allows camera/zone inspection strictly to Principal, HOD, and Mentor."""
+    """Allows camera/zone inspection to Principal, Security, HOD, Mentor, and Faculty."""
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        return request.user.role in ['PRINCIPAL', 'HOD', 'MENTOR']
+        return request.user.role in ['PRINCIPAL', 'HOD', 'MENTOR', 'FACULTY', 'SECURITY']
 
 
 class IsCameraAdmin(permissions.BasePermission):

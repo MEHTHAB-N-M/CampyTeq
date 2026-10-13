@@ -20,11 +20,11 @@ from .serializers import (
 
 
 class IsSecurityOrAdmin(permissions.BasePermission):
-    """Allows access only to Principal, HOD, or Mentor."""
+    """Allows access to Principal, Security, HOD, Mentor, or Faculty."""
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        return request.user.role in ['PRINCIPAL', 'HOD', 'MENTOR']
+        return request.user.role in ['PRINCIPAL', 'HOD', 'MENTOR', 'FACULTY', 'SECURITY']
 
 
 IsTrackingAuthorized = IsSecurityOrAdmin
@@ -165,7 +165,7 @@ class StudentLastSeenView(APIView):
         user = request.user
 
         # 1. Role authorization check
-        allowed_roles = ['PRINCIPAL', 'HOD', 'MENTOR']
+        allowed_roles = ['PRINCIPAL', 'HOD', 'MENTOR', 'FACULTY', 'SECURITY']
         if user.role not in allowed_roles:
             return Response({
                 'success': False,

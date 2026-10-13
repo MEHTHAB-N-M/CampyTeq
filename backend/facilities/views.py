@@ -79,7 +79,7 @@ class FacilityBookingViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        # Requirement 9: Only Mentors can raise booking requests
+        # Requirement: Only Mentors and Principal can raise facility booking requests
         if user.role not in ["MENTOR", "PRINCIPAL"]:
             raise permissions.exceptions.PermissionDenied(
                 "Facility booking requests can only be raised by Faculty Mentors."

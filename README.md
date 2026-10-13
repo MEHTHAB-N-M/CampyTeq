@@ -10,14 +10,14 @@
 
 ```text
 campyteq/
-├── backend/            # Django 5 REST Framework, SimpleJWT, drf-spectacular, PostgreSQL 16
+├── backend/            # Django 5 REST Framework, SimpleJWT, drf-spectacular, PostgreSQL
 │   ├── accounts/       # Custom UUID user, 12 RBAC roles, JWT auth & profile handlers
 │   ├── colleges/       # Multi-tenant College model & comprehensive demo seed command
 │   ├── departments/    # Academic departments & HOD assignments
 │   ├── academics/      # Courses, Batches, Semesters, Subjects, Timetable schedules
 │   ├── students/       # Student directory, Guardian details, Mentor assignments
 │   ├── faculty/        # Faculty directory, qualifications, subject mappings
-│   ├── attendance/     # Lecture/Lab attendance, bulk marking, 75% statutory defaulter radar, faculty biometric check-ins
+│   ├── attendance/     # Lecture/Lab attendance, bulk marking, 75% statutory defaulter radar
 │   ├── exams/          # Examination series, exam subjects, confidential grade results
 │   ├── assignments/    # Assignments, document attachments, submissions & grading
 │   ├── fees/           # Fee structures, student invoices, simulated payment gateway, digital receipts
@@ -28,14 +28,9 @@ campyteq/
 │   ├── cameras/        # Campus CCTV registry, camera zones, operational health monitoring
 │   ├── tracking/       # Edge CV sighting ingestion, last seen locations, breadcrumb journey stepper, privacy audit logs
 │   └── analytics/      # Institutional analytics & AI Academic Early Warning Radar
-├── frontend/           # Next.js 14 (App Router), TypeScript, Tailwind CSS, Lucide icons (23 routes)
-├── mobile/             # React Native (Expo 51) Student Companion Mobile Application
-├── cv-service/         # Edge Computer Vision detection stream simulator (OpenCV / YOLO gateway)
-├── nginx/              # Production Nginx reverse proxy (SSL, gzip, rate limiting)
-├── .github/workflows/  # Automated CI/CD pipeline (pytest, typecheck, next build, compose validate)
-├── docker-compose.yml  # Local multi-container development environment
-├── docker-compose.prod.yml # Production multi-container orchestration
-├── DEPLOYMENT.md       # Production operations manual & Let's Encrypt SSL guide
+├── frontend/           # Pure React (Vite), React Router, TypeScript, Tailwind CSS, Lucide icons (20+ routes)
+├── cv-service/         # Python Edge Computer Vision & AI detection pipeline (OpenCV / YOLO gateway)
+├── DEPLOYMENT.md       # Running instructions manual
 └── ARCHITECTURE.md     # Architectural deep-dive & multi-tenancy invariants
 ```
 
@@ -45,7 +40,7 @@ campyteq/
 
 | Phase | Module | Key Features |
 |---|---|---|
-| **Phase 1** | **Multi-Tenant Foundation & RBAC** | Custom `User`, 12 institutional roles, JWT auth, tenant scoping, Swagger/OpenAPI docs, Next.js dark-mode UI. |
+| **Phase 1** | **Multi-Tenant Foundation & RBAC** | Custom `User`, 12 institutional roles, JWT auth, tenant scoping, Swagger/OpenAPI docs, React dark-mode UI. |
 | **Phase 2** | **Institutional Hierarchy & People** | Departments (HOD), Courses, Batches, Semesters, Faculty profiles, Student directory, Mentor assignments. |
 | **Phase 3** | **Academics, Exams & Assignments** | Subjects, Weekly Timetable, Exam management, confidential results publishing, assignment grading & attachments. |
 | **Phase 4** | **Attendance & Faculty Timesheets** | Lecture/lab sessions, bulk student attendance marking, statutory 75% defaulters radar, faculty check-in/out working hours. |
@@ -103,14 +98,7 @@ npm run dev
 ```
 - Web Application: `http://localhost:3000` (features 1-click demo role switcher on login screen).
 
-### 3. Student Mobile App Setup
-```bash
-cd mobile
-npm install
-npx expo start
-```
-
-### 4. Edge CV Stream Simulation
+### 3. Edge Computer Vision / AI Simulation (Python)
 ```bash
 cd cv-service
 python stream_simulator.py
@@ -120,26 +108,15 @@ python stream_simulator.py
 
 ## Automated Verification Suite
 
-Run the full backend regression suite (all 10 modules):
+Run the full backend test suite:
 ```bash
 cd backend
 pytest -v
-# Output: 48 passed in ~2.5 minutes (100% pass rate, 0 regressions)
 ```
 
-Verify the frontend production bundle:
+Verify the frontend build:
 ```bash
 cd frontend
 npm run build
-# Output: 23 static and dynamic routes compiled cleanly
 ```
 
----
-
-## Production Deployment
-
-Refer to [`DEPLOYMENT.md`](file:///c:/Users/Asus/OneDrive/Desktop/campus360/DEPLOYMENT.md) for full production deployment instructions using Docker Compose:
-```bash
-cp .env.production.example .env.production
-docker compose -f docker-compose.prod.yml up -d --build
-```

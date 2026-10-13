@@ -26,23 +26,19 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             # Students only see their own requests
             return qs.filter(user=user)
 
-        elif user.role == "MENTOR":
-            # Mentors see their own leaves + student leaves routed to them
-            mentor_filter = Q(user=user) | Q(routed_to=user)
+        elif user.role in ["FACULTY", "MENTOR"]:
+            # Faculty/Mentor sees own leaves + student leaves assigned to them
+            faculty_filter = Q(user=user) | Q(routed_to=user)
             if hasattr(user, "faculty_profile"):
                 from students.models import MentorAssignment
                 student_user_ids = MentorAssignment.objects.filter(
                     mentor=user.faculty_profile, is_active=True
                 ).values_list("student__user_id", flat=True)
-                mentor_filter |= (Q(routed_tier="MENTOR") & Q(user_id__in=student_user_ids))
-            return qs.filter(mentor_filter)
-
-        elif user.role == "FACULTY":
-            # Lab Faculty sees their own leaves + any routed to them
-            return qs.filter(Q(user=user) | Q(routed_to=user))
+                faculty_filter |= (Q(routed_tier__in=["MENTOR", "FACULTY"]) & Q(user_id__in=student_user_ids))
+            return qs.filter(faculty_filter)
 
         elif user.role == "HOD":
-            # HOD sees their own leaves + Faculty/Mentor leaves for their department
+            # HOD sees own leaves + Faculty/Mentor leaves in their department
             hod_filter = Q(user=user) | Q(routed_to=user)
             dept = getattr(getattr(user, "faculty_profile", None), "department", None)
             if dept:
@@ -53,8 +49,13 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             return qs.filter(hod_filter)
 
         elif user.role == "PRINCIPAL":
-            # Principal views own leaves + leaves submitted by HODs routed to Principal
-            return qs.filter(Q(user=user) | Q(routed_to=user) | Q(routed_tier="PRINCIPAL"))
+            # Principal sees all staff leaves + leaves forwarded for Principal approval
+            return qs.filter(
+                Q(user=user)
+                | Q(routed_to=user)
+                | Q(routed_tier="PRINCIPAL")
+                | Q(user__role__in=["HOD", "FACULTY", "MENTOR"])
+            )
 
         # Other roles see only their own
         return qs.filter(user=user)
@@ -132,10 +133,44 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
 
         serializer = LeaveReviewActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        remarks = serializer.validated_data.get("approval_remarks", "Approved as requested.")
 
+        # Multi-tier hierarchy: Principal <- HOD <- Faculty
+        # If applicant is Faculty/Mentor and reviewer is HOD, forward to Principal for final sign-off
+        if leave_req.user.role in ["FACULTY", "MENTOR"] and request.user.role == "HOD":
+            from accounts.models import User as AccountUser
+            principal_user = AccountUser.objects.filter(
+                college=leave_req.college, role="PRINCIPAL"
+            ).first()
+            leave_req.routed_tier = "PRINCIPAL"
+            if principal_user:
+                leave_req.routed_to = principal_user
+            leave_req.approval_remarks = f"HOD Recommendation ({request.user.get_full_name()}): {remarks}"
+            leave_req.save()
+
+            if principal_user:
+                Notification.objects.create(
+                    college=leave_req.college,
+                    recipient=principal_user,
+                    title=f"Faculty Leave (HOD Recommended): {leave_req.user.get_full_name()}",
+                    message=f"{leave_req.days_count} days {leave_req.get_leave_type_display()} recommended by HOD {request.user.get_full_name()}.",
+                    notification_type="LEAVE_STATUS",
+                    action_url="/dashboard/leave",
+                )
+            Notification.objects.create(
+                college=leave_req.college,
+                recipient=leave_req.user,
+                title="Leave Recommended by HOD",
+                message=f"HOD {request.user.get_full_name()} has recommended your leave and forwarded it to Principal for final approval.",
+                notification_type="LEAVE_STATUS",
+                action_url="/dashboard/leave",
+            )
+            return Response(LeaveRequestSerializer(leave_req).data)
+
+        # Final approval (by Principal for staff, or Faculty for Student)
         leave_req.status = "APPROVED"
         leave_req.approved_by = request.user
-        leave_req.approval_remarks = serializer.validated_data.get("approval_remarks", "Approved as requested.")
+        leave_req.approval_remarks = remarks
         leave_req.reviewed_at = timezone.now()
         leave_req.save()
 
@@ -190,7 +225,7 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             return True
         if leave_req.routed_to_id and leave_req.routed_to_id == user.id:
             return True
-        if leave_req.routed_tier == "MENTOR" and user.role == "MENTOR":
+        if leave_req.routed_tier in ["MENTOR", "FACULTY"] and user.role in ["MENTOR", "FACULTY"]:
             return True
         if leave_req.routed_tier == "HOD" and user.role == "HOD":
             return True
