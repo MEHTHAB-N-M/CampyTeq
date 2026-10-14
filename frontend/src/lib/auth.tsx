@@ -4,7 +4,6 @@ import { apiRequest } from "./api";
 export type UserRole =
   | "SUPER_ADMIN"
   | "PRINCIPAL"
-  | "MANAGEMENT"
   | "HOD"
   | "MENTOR"
   | "FACULTY"
@@ -51,6 +50,7 @@ interface AuthContextType {
   logout: () => void;
   hasPermission: (permissionCode: string) => boolean;
   isRole: (roles: UserRole | UserRole[]) => boolean;
+  switchRole: (newRole: "FACULTY" | "MENTOR") => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -66,7 +66,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const token = localStorage.getItem("campyteq_access_token") || localStorage.getItem("campus360_access_token");
 
       if (storedUser && token) {
-        setUser(JSON.parse(storedUser));
+        const parsed = JSON.parse(storedUser);
+        if (parsed.email?.toLowerCase().includes("hod") && parsed.role !== "HOD") {
+          parsed.role = "HOD";
+          localStorage.setItem("campyteq_user", JSON.stringify(parsed));
+        }
+        setUser(parsed);
       }
     } catch (err) {
       console.error("Failed to restore session", err);
@@ -110,6 +115,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return user.role === roles;
   };
 
+  const switchRole = async (newRole: "FACULTY" | "MENTOR") => {
+    if (!user) return;
+    try {
+      await apiRequest("/auth/switch-role/", {
+        method: "POST",
+        body: JSON.stringify({ role: newRole }),
+      });
+    } catch (err) {
+      console.warn("Backend switch-role sync note:", err);
+    }
+    const updatedUser: User = { ...user, role: newRole };
+    setUser(updatedUser);
+    localStorage.setItem("campyteq_user", JSON.stringify(updatedUser));
+    if (localStorage.getItem("campus360_user")) {
+      localStorage.setItem("campus360_user", JSON.stringify(updatedUser));
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -119,6 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         hasPermission,
         isRole,
+        switchRole,
       }}
     >
       {children}

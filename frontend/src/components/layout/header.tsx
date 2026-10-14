@@ -16,7 +16,7 @@ interface NotificationItem {
 }
 
 export function Header() {
-  const { user, logout } = useAuth();
+  const { user, logout, switchRole } = useAuth();
   const navigate = useNavigate();
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -86,7 +86,17 @@ export function Header() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search students, faculty, circulars, roll numbers..."
+            placeholder={
+              user.role === "PRINT_STAFF"
+                ? "Search print orders, pickup PINs..."
+                : user.role === "LIBRARY_STAFF"
+                ? "Search books, authors, ISBNs..."
+                : user.role === "SECURITY"
+                ? "Search camera zones, student sighting ID..."
+                : user.role === "ACCOUNTANT"
+                ? "Search student invoices, roll numbers..."
+                : "Search students, faculty, circulars, roll numbers..."
+            }
             className="w-full bg-secondary/50 border border-border/60 rounded-lg pl-9 pr-4 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary transition-all"
           />
         </div>
@@ -94,14 +104,45 @@ export function Header() {
 
       {/* Right controls */}
       <div className="flex items-center gap-4">
-        {/* Role Pill */}
-        <Badge
-          variant="secondary"
-          className="text-xs bg-indigo-500/10 text-indigo-300 border-indigo-500/20 font-medium px-2.5 py-1"
-        >
-          <Shield className="h-3 w-3 mr-1 text-indigo-400 inline" />
-          {user.role.replace("_", " ")}
-        </Badge>
+        {/* Faculty ⇄ Mentor Perspective Switcher */}
+        {user.role === "FACULTY" || user.role === "MENTOR" ? (
+          <div className="flex items-center bg-secondary/80 border border-indigo-500/30 p-0.5 rounded-lg text-xs shadow-inner">
+            <button
+              type="button"
+              id="switch-to-faculty-btn"
+              onClick={() => switchRole("FACULTY")}
+              className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                user.role === "FACULTY"
+                  ? "bg-indigo-600 text-white shadow"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span>👨‍🏫</span>
+              <span>Class Incharge</span>
+            </button>
+            <button
+              type="button"
+              id="switch-to-mentor-btn"
+              onClick={() => switchRole("MENTOR")}
+              className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                user.role === "MENTOR"
+                  ? "bg-purple-600 text-white shadow"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span>🎯</span>
+              <span>Mentor</span>
+            </button>
+          </div>
+        ) : (
+          <Badge
+            variant="secondary"
+            className="text-xs bg-indigo-500/10 text-indigo-300 border-indigo-500/20 font-medium px-2.5 py-1"
+          >
+            <Shield className="h-3 w-3 mr-1 text-indigo-400 inline" />
+            {user.role.replace("_", " ")}
+          </Badge>
+        )}
 
         {/* Real Live Notifications Bell */}
         <div className="relative">

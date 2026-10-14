@@ -12,7 +12,6 @@ import { apiRequest } from "@/lib/api";
 const DEMO_ACCOUNTS = [
   { role: "Super Admin", email: "superadmin@campyteq.io", note: "Global Platform Operator & Cross-College Administration", color: "border-purple-500/40 text-purple-300" },
   { role: "Principal", email: "principal@apex.edu", note: "Apex Tech Executive Dashboard & Full Administration", color: "border-indigo-500/40 text-indigo-300" },
-  { role: "Management", email: "management@apex.edu", note: "Financial & Campus Operations", color: "border-blue-500/40 text-blue-300" },
   { role: "HOD (CS)", email: "hod.cs@apex.edu", note: "Department Roster & Facility Approvals", color: "border-cyan-500/40 text-cyan-300" },
   { role: "Faculty & Mentor", email: "faculty.priya@apex.edu", note: "Classes, Attendance, Mentees & AI Radar", color: "border-emerald-500/40 text-emerald-300" },
   { role: "Campus Security", email: "security.chief@apex.edu", note: "Perimeter Cameras & AI Face Sightings", color: "border-teal-500/40 text-teal-300" },

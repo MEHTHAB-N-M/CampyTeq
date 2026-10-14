@@ -47,12 +47,11 @@ interface PrintOrder {
 export default function PrintShopPage() {
   const { user } = useAuth();
   const [orders, setOrders] = useState<PrintOrder[]>([]);
+  const isPrintStaff = ["PRINT_STAFF", "PRINCIPAL"].includes(user?.role || "");
+  const [activeTab, setActiveTab] = useState<"MY_ORDERS" | "STATION_QUEUE">(
+    user?.role === "PRINT_STAFF" ? "STATION_QUEUE" : "MY_ORDERS"
+  );
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"MY_ORDERS" | "STATION_QUEUE">("MY_ORDERS");
-  const [showOrderModal, setShowOrderModal] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
-
-  // New Print Order Form State
   const [formData, setFormData] = useState({
     document_name: "",
     file_url: "/printshop/sample_upload.pdf",
@@ -67,8 +66,9 @@ export default function PrintShopPage() {
     payment_status: "ON_PICKUP",
   });
   const [submitting, setSubmitting] = useState(false);
-
-  const isPrintStaff = ["PRINT_STAFF", "PRINCIPAL"].includes(user?.role || "");
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const fetchOrders = async () => {
     try {
@@ -86,6 +86,45 @@ export default function PrintShopPage() {
   useEffect(() => {
     fetchOrders();
   }, []);
+
+  const handleOpenEdit = (ord: PrintOrder) => {
+    setEditingOrderId(ord.id);
+    setFormData({
+      document_name: ord.document_name,
+      file_url: ord.file_url,
+      page_count: ord.page_count,
+      copies: ord.copies,
+      print_color: ord.print_color,
+      print_side: ord.print_side,
+      paper_size: ord.paper_size,
+      binding_type: ord.binding_type,
+      lamination: ord.lamination,
+      special_instructions: ord.special_instructions,
+      payment_status: ord.payment_status,
+    });
+    setShowOrderModal(true);
+  };
+
+  const handleDeleteOrder = async (orderId: string) => {
+    if (!confirm("Are you sure you want to cancel and delete this print job?")) return;
+    try {
+      await apiRequest(`/printshop/orders/${orderId}/`, {
+        method: "DELETE",
+      });
+      fetchOrders();
+    } catch (err) {
+      console.error("Failed to delete order", err);
+      try {
+        await apiRequest(`/printshop/orders/${orderId}/update_status/`, {
+          method: "POST",
+          body: JSON.stringify({ status: "CANCELLED" }),
+        });
+        fetchOrders();
+      } catch (e) {
+        alert("Failed to cancel order.");
+      }
+    }
+  };
 
   // Client-side cost estimate for interactive preview
   const calculateEstimatedCost = () => {
@@ -111,11 +150,19 @@ export default function PrintShopPage() {
     e.preventDefault();
     try {
       setSubmitting(true);
-      await apiRequest("/printshop/orders/", {
-        method: "POST",
-        body: JSON.stringify(formData),
-      });
+      if (editingOrderId) {
+        await apiRequest(`/printshop/orders/${editingOrderId}/`, {
+          method: "PATCH",
+          body: JSON.stringify(formData),
+        });
+      } else {
+        await apiRequest("/printshop/orders/", {
+          method: "POST",
+          body: JSON.stringify(formData),
+        });
+      }
       setShowOrderModal(false);
+      setEditingOrderId(null);
       setFormData({
         document_name: "",
         file_url: "/printshop/sample_upload.pdf",
@@ -185,13 +232,15 @@ export default function PrintShopPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => setShowOrderModal(true)}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-colors self-start md:self-auto"
-        >
-          <Plus className="h-4 w-4" />
-          Send New Print Job
-        </button>
+        {!isPrintStaff && (
+          <button
+            onClick={() => setShowOrderModal(true)}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-colors self-start md:self-auto"
+          >
+            <Plus className="h-4 w-4" />
+            Send New Print Job
+          </button>
+        )}
       </div>
 
       {/* Metric Cards */}
@@ -244,36 +293,36 @@ export default function PrintShopPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-border/60 pb-2">
-        <button
-          onClick={() => setActiveTab("MY_ORDERS")}
-          className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-            activeTab === "MY_ORDERS"
-              ? "bg-indigo-600 text-white shadow-sm"
-              : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
-          }`}
-        >
-          My Print Orders ({myOrders.length})
-        </button>
-
-        {isPrintStaff && (
+      {!isPrintStaff ? (
+        <div className="flex gap-2 border-b border-border/60 pb-2">
           <button
-            onClick={() => setActiveTab("STATION_QUEUE")}
-            className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
-              activeTab === "STATION_QUEUE"
+            onClick={() => setActiveTab("MY_ORDERS")}
+            className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              activeTab === "MY_ORDERS"
                 ? "bg-indigo-600 text-white shadow-sm"
                 : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
             }`}
           >
-            Station Queue Manager
-            {queueOrders.length > 0 && (
-              <span className="h-4 px-1.5 rounded-full bg-indigo-500 text-white text-[10px] font-bold">
-                {queueOrders.length}
-              </span>
-            )}
+            My Print Orders ({myOrders.length})
           </button>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between border-b border-border/60 pb-2">
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg shadow-sm flex items-center gap-1.5">
+              Station Queue Manager
+              {queueOrders.length > 0 && (
+                <span className="h-4 px-1.5 rounded-full bg-white/20 text-white text-[10px] font-bold">
+                  {queueOrders.length}
+                </span>
+              )}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Live student orders across campus awaiting printing & pickup dispatch
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       {loading ? (
@@ -402,6 +451,7 @@ export default function PrintShopPage() {
                     <th className="p-3.5 font-semibold">Cost</th>
                     <th className="p-3.5 font-semibold">Status</th>
                     <th className="p-3.5 font-semibold">Submission Date</th>
+                    <th className="p-3.5 font-semibold text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40">
@@ -434,6 +484,28 @@ export default function PrintShopPage() {
                       <td className="p-3.5 text-muted-foreground font-mono text-[11px]">
                         {new Date(ord.created_at).toLocaleDateString()}
                       </td>
+                      <td className="p-3.5 text-right">
+                        {["QUEUED", "PENDING"].includes(ord.status) ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(ord)}
+                              className="px-2 py-1 rounded bg-secondary text-[10px] font-semibold text-foreground hover:bg-secondary/80 border border-border"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteOrder(ord.id)}
+                              className="px-2 py-1 rounded bg-red-500/10 text-[10px] font-semibold text-red-400 hover:bg-red-500/20 border border-red-500/30"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -443,18 +515,31 @@ export default function PrintShopPage() {
         </div>
       )}
 
-      {/* New Print Order Modal with Realtime Price Estimate */}
+      {/* New / Edit Print Order Modal with Realtime Price Estimate */}
       {showOrderModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-card border border-border/80 rounded-2xl w-full max-w-lg p-6 shadow-2xl animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-bold text-foreground mb-1">Submit Print Job</h2>
+            <h2 className="text-lg font-bold text-foreground mb-1">
+              {editingOrderId ? "Edit & Update Print Job" : "Submit New Print Job"}
+            </h2>
             <p className="text-xs text-muted-foreground mb-4">
-              Configure layout, binding, and color preferences. Instant pricing is calculated automatically.
+              Select print shop location, configure color, layout, and binding preferences.
             </p>
 
             <form onSubmit={handleCreateOrder} className="space-y-4 text-xs">
               <div>
-                <label className="font-semibold block mb-1">Document Name / File *</label>
+                <label className="font-semibold block mb-1">Select Print Shop Station *</label>
+                <select
+                  className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="CENTRAL_HUB">Main Campus Central Print Hub (Admin Block Ground Floor)</option>
+                  <option value="LIBRARY_DESK">Central Library Fast-Desk (1st Floor)</option>
+                  <option value="TECH_CORNER">CSE & Engineering Complex Print Corner (Lab Block 2)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold block mb-1">Upload & Send PDF Document *</label>
                 <input
                   type="text"
                   required
@@ -492,7 +577,7 @@ export default function PrintShopPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-semibold block mb-1">Color Mode</label>
+                  <label className="font-semibold block mb-1">Color Mode (Color vs White & Black)</label>
                   <select
                     value={formData.print_color}
                     onChange={(e) => setFormData({ ...formData, print_color: e.target.value as any })}
@@ -504,28 +589,29 @@ export default function PrintShopPage() {
                 </div>
 
                 <div>
-                  <label className="font-semibold block mb-1">Print Layout</label>
+                  <label className="font-semibold block mb-1">Print Layout (Two-side / Single / Book Type)</label>
                   <select
                     value={formData.print_side}
                     onChange={(e) => setFormData({ ...formData, print_side: e.target.value as any })}
                     className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   >
-                    <option value="DUPLEX">Double Sided / Duplex (10% Off)</option>
+                    <option value="DUPLEX">Two Sided / Duplex (10% Off)</option>
                     <option value="SINGLE">Single Sided</option>
+                    <option value="BOOKLET">Book Type / Booklet Fold</option>
                   </select>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-semibold block mb-1">Binding</label>
+                  <label className="font-semibold block mb-1">Binding Options</label>
                   <select
                     value={formData.binding_type}
                     onChange={(e) => setFormData({ ...formData, binding_type: e.target.value as any })}
                     className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   >
                     <option value="NONE">No Binding</option>
-                    <option value="STAPLE">Corner Staple (Free)</option>
+                    <option value="STAPLE">Corner Stapling (Free)</option>
                     <option value="SPIRAL">Spiral Coil Binding (+₹30)</option>
                     <option value="HARD_BINDING">Hardcover Book Binding (+₹150)</option>
                   </select>

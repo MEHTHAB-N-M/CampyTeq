@@ -25,7 +25,10 @@ class BookViewSet(viewsets.ModelViewSet):
     search_fields = ["title", "author", "isbn", "publisher", "shelf_location"]
 
     def get_queryset(self):
-        return Book.objects.filter(college=self.request.user.college)
+        user = self.request.user
+        if user.role in ["STUDENT", "PARENT"]:
+            return Book.objects.none()
+        return Book.objects.filter(college=user.college)
 
     def perform_create(self, serializer):
         serializer.save(college=self.request.user.college)
@@ -43,6 +46,8 @@ class BookIssueViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        if user.role in ["STUDENT", "PARENT"]:
+            return BookIssue.objects.none()
         qs = BookIssue.objects.filter(college=user.college).select_related(
             "book", "user", "student", "issued_by"
         )
@@ -114,18 +119,20 @@ class LibraryRequestViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        if user.role in ["STUDENT", "PARENT"]:
+            return LibraryRequest.objects.none()
         qs = LibraryRequest.objects.filter(college=user.college).select_related(
             "user", "book", "reviewed_by"
         )
-        if user.role in ["LIBRARY_STAFF", "PRINCIPAL"]:
+        if user.role in ["LIBRARY_STAFF", "PRINCIPAL", "SUPER_ADMIN"]:
             return qs
-        # Mentors view their own requests
+        # Mentors and HODs view their own requests
         return qs.filter(user=user)
 
     def perform_create(self, serializer):
         user = self.request.user
-        if user.role not in ["MENTOR", "FACULTY", "PRINCIPAL"]:
-            raise permissions.exceptions.PermissionDenied("Only Faculty and Mentors can submit library requests.")
+        if user.role not in ["HOD", "MENTOR", "FACULTY", "PRINCIPAL", "SUPER_ADMIN"]:
+            raise permissions.exceptions.PermissionDenied("Only HODs, Faculty, and Mentors can submit library requests.")
         
         req = serializer.save(
             college=user.college,

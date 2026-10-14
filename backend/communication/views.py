@@ -11,15 +11,11 @@ from departments.models import Department
 from communication.models import (
     Announcement,
     Notification,
-    Conversation,
-    Message,
     Document,
 )
 from communication.serializers import (
     AnnouncementSerializer,
     NotificationSerializer,
-    ConversationSerializer,
-    MessageSerializer,
     DocumentSerializer,
 )
 
@@ -32,9 +28,17 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Announcement.objects.filter(college=user.college).select_related(
-            "department", "created_by"
-        )
+        if user.role == "SUPER_ADMIN":
+            active_college = getattr(self.request, "college", None)
+            qs = Announcement.objects.all().select_related("department", "created_by", "college")
+            if active_college:
+                qs = qs.filter(Q(college=active_college) | Q(college__isnull=True))
+            return qs
+
+        # Users see announcements for their college + global super admin announcements
+        qs = Announcement.objects.filter(
+            Q(college=user.college) | Q(college__isnull=True)
+        ).select_related("department", "created_by")
 
         if user.role == "STUDENT":
             dept = getattr(getattr(user, "student_profile", None), "department", None)
@@ -50,6 +54,13 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
                 | Q(target_audience="FACULTY_ONLY")
                 | (Q(target_audience="DEPARTMENT") & Q(department=dept))
             )
+        elif user.role == "HOD":
+            dept = getattr(getattr(user, "faculty_profile", None), "department", None)
+            return qs.filter(
+                Q(target_audience="ENTIRE_COLLEGE")
+                | (Q(department=dept) if dept else Q())
+                | Q(created_by=user)
+            )
         return qs
 
     def perform_create(self, serializer):
@@ -59,9 +70,18 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
             from rest_framework.exceptions import ValidationError
             raise ValidationError({"category": "Accountants are only authorized to publish Fee announcements."})
 
+        extra_kwargs = {}
+        if user.role == "HOD":
+            dept = getattr(getattr(user, "faculty_profile", None), "department", None)
+            if dept:
+                extra_kwargs["department"] = dept
+
+        college = getattr(self.request, "college", None) or user.college
+
         serializer.save(
-            college=self.request.user.college,
-            created_by=self.request.user,
+            college=college,
+            created_by=user,
+            **extra_kwargs
         )
 
 
@@ -93,48 +113,6 @@ class NotificationViewSet(viewsets.ModelViewSet):
         return Response(NotificationSerializer(notif).data)
 
 
-class ConversationViewSet(viewsets.ModelViewSet):
-    serializer_class = ConversationSerializer
-    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
-
-    def get_queryset(self):
-        return Conversation.objects.filter(
-            college=self.request.user.college,
-            participants=self.request.user,
-        ).prefetch_related("participants", "messages", "messages__sender")
-
-    def perform_create(self, serializer):
-        conv = serializer.save(college=self.request.user.college)
-        conv.participants.add(self.request.user)
-
-    @action(detail=True, methods=["post"])
-    def send_message(self, request, pk=None):
-        conv = self.get_object()
-        content = request.data.get("content", "").strip()
-        if not content:
-            return Response({"error": "Message content cannot be empty"}, status=status.HTTP_400_BAD_REQUEST)
-
-        msg = Message.objects.create(
-            college=conv.college,
-            conversation=conv,
-            sender=request.user,
-            content=content,
-        )
-        conv.last_message_at = timezone.now()
-        conv.save()
-
-        # Send notification to other participants
-        for p in conv.participants.exclude(id=request.user.id):
-            Notification.objects.create(
-                college=conv.college,
-                recipient=p,
-                title=f"New message from {request.user.get_full_name()}",
-                message=content[:100],
-                notification_type="MESSAGE",
-                action_url="/dashboard/messages",
-            )
-
-        return Response(MessageSerializer(msg).data, status=status.HTTP_201_CREATED)
 
 
 class DocumentViewSet(viewsets.ModelViewSet):

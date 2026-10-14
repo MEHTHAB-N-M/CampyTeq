@@ -165,12 +165,12 @@ class StudentLastSeenView(APIView):
         user = request.user
 
         # 1. Role authorization check
-        allowed_roles = ['PRINCIPAL', 'HOD', 'MENTOR', 'FACULTY', 'SECURITY']
-        if user.role not in allowed_roles:
+        allowed_roles = ['SUPER_ADMIN', 'PRINCIPAL', 'HOD', 'MENTOR', 'FACULTY']
+        if user.role not in allowed_roles or user.role == 'SECURITY':
             return Response({
                 'success': False,
-                'message': "You do not have institutional authorization to search student location history.",
-                'code': 'PERMISSION_DENIED'
+                'message': "Security personnel are restricted from individual student location queries. Only academic administrators, faculty, and mentors may query student locations.",
+                'code': 'SECURITY_STUDENT_SEARCH_RESTRICTED'
             }, status=status.HTTP_403_FORBIDDEN)
 
         # 2. Mandatory Reason Validation

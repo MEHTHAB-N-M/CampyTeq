@@ -22,6 +22,16 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             "user", "approved_by", "routed_to"
         )
 
+        if user.role == "SUPER_ADMIN":
+            # Super Admin sees leave requests from Principals across colleges
+            active_college = getattr(self.request, "college", None)
+            base_qs = LeaveRequest.objects.all()
+            if active_college:
+                base_qs = base_qs.filter(college=active_college)
+            return base_qs.filter(
+                Q(user__role="PRINCIPAL") | Q(routed_tier="SUPER_ADMIN") | Q(user=user)
+            ).select_related("user", "approved_by", "routed_to")
+
         if user.role == "STUDENT":
             # Students only see their own requests
             return qs.filter(user=user)
@@ -98,6 +108,12 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             routed_to = AccountUser.objects.filter(
                 college=user.college, role="PRINCIPAL"
             ).first()
+
+        # 4. Principal -> Super Admin
+        elif user.role == "PRINCIPAL":
+            routed_tier = "SUPER_ADMIN"
+            from accounts.models import User as AccountUser
+            routed_to = AccountUser.objects.filter(role="SUPER_ADMIN").first()
 
         req = serializer.save(
             college=user.college,
@@ -221,7 +237,7 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
         return Response(LeaveRequestSerializer(leave_req).data)
 
     def _can_review(self, user, leave_req):
-        if user.role == "PRINCIPAL":
+        if user.role in ["SUPER_ADMIN", "PRINCIPAL"]:
             return True
         if leave_req.routed_to_id and leave_req.routed_to_id == user.id:
             return True

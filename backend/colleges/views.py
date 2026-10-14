@@ -30,7 +30,7 @@ class CollegeViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user or not user.is_authenticated:
             return College.objects.none()
-        if user.role == 'PRINCIPAL':
+        if user.role in ['SUPER_ADMIN', 'PRINCIPAL']:
             return College.objects.filter(is_deleted=False)
         if user.college_id:
             return College.objects.filter(id=user.college_id, is_deleted=False)
@@ -40,7 +40,10 @@ class CollegeViewSet(viewsets.ModelViewSet):
     def current(self, request):
         """Returns the currently authenticated user's college profile."""
         if not request.user.college:
-            if request.user.role == 'PRINCIPAL':
+            if request.user.role in ['SUPER_ADMIN', 'PRINCIPAL']:
+                active_college = getattr(request, 'college', None)
+                if active_college:
+                    return Response(self.get_serializer(active_college).data)
                 first_college = College.objects.filter(is_deleted=False).first()
                 if first_college:
                     serializer = self.get_serializer(first_college)

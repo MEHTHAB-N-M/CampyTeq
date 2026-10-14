@@ -5,7 +5,6 @@ import { DashboardLayout } from "./components/layout/DashboardLayout";
 
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/dashboard/DashboardOverview";
-import AcademicsPage from "./pages/dashboard/academics";
 import AnalyticsPage from "./pages/dashboard/analytics";
 import AnnouncementsPage from "./pages/dashboard/announcements";
 import AssignmentsPage from "./pages/dashboard/assignments";
@@ -18,7 +17,6 @@ import FacultyPage from "./pages/dashboard/faculty";
 import FeesPage from "./pages/dashboard/fees";
 import LeaveManagementPage from "./pages/dashboard/leave";
 import LibraryPage from "./pages/dashboard/library";
-import MessagesPage from "./pages/dashboard/messages";
 import PayrollPage from "./pages/dashboard/payroll";
 import PrintShopPage from "./pages/dashboard/printshop";
 import StudentsPage from "./pages/dashboard/students";
@@ -61,7 +59,6 @@ export default function App() {
 
           <Route path="/dashboard" element={<DashboardLayout />}>
             <Route index element={<DashboardPage />} />
-            <Route path="academics" element={<AcademicsPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="announcements" element={<AnnouncementsPage />} />
             <Route path="assignments" element={<AssignmentsPage />} />
@@ -74,7 +71,6 @@ export default function App() {
             <Route path="fees" element={<FeesPage />} />
             <Route path="leave" element={<LeaveManagementPage />} />
             <Route path="library" element={<LibraryPage />} />
-            <Route path="messages" element={<MessagesPage />} />
             <Route path="payroll" element={<PayrollPage />} />
             <Route path="printshop" element={<PrintShopPage />} />
             <Route path="students" element={<StudentsPage />} />

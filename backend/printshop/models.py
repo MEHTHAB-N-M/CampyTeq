@@ -28,6 +28,7 @@ class PrintOrder(TenantModel):
     class PrintSide(models.TextChoices):
         SINGLE = "SINGLE", "Single Sided"
         DUPLEX = "DUPLEX", "Double Sided (Duplex)"
+        BOOKLET = "BOOKLET", "Booklet / Book Type"
 
     class PaperSize(models.TextChoices):
         A4 = "A4", "Standard A4"

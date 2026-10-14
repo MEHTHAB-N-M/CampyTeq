@@ -101,7 +101,7 @@ export default function PayrollPage() {
       setPayslips(pList);
 
       // 2. Fetch Salary Structures if staff
-      if (["PRINCIPAL", "MANAGEMENT"].includes(user?.role || "")) {
+      if (["PRINCIPAL", "SUPER_ADMIN"].includes(user?.role || "")) {
         const sRes = await apiRequest<{ results: SalaryStructure[] } | SalaryStructure[]>("/payroll/structures/");
         const sList = Array.isArray(sRes) ? sRes : sRes.results || [];
         setStructures(sList);
@@ -188,7 +188,7 @@ export default function PayrollPage() {
             </div>
           )}
 
-          {["PRINCIPAL", "MANAGEMENT"].includes(user?.role || "") && (
+          {["PRINCIPAL", "SUPER_ADMIN"].includes(user?.role || "") && (
             <Button
               size="sm"
               variant="gradient"
@@ -263,7 +263,7 @@ export default function PayrollPage() {
       </div>
 
       {/* Tabs for Staff */}
-      {["PRINCIPAL", "MANAGEMENT"].includes(user?.role || "") && (
+      {["PRINCIPAL", "SUPER_ADMIN"].includes(user?.role || "") && (
         <div className="flex border-b border-border/60 gap-4 text-xs font-medium">
           <button
             onClick={() => setActiveTab("payslips")}
@@ -365,7 +365,7 @@ export default function PayrollPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {p.status !== "PAID" && ["PRINCIPAL", "MANAGEMENT"].includes(user?.role || "") && (
+                        {p.status !== "PAID" && ["PRINCIPAL", "SUPER_ADMIN"].includes(user?.role || "") && (
                           <Button
                             size="sm"
                             variant="gradient"

@@ -13,7 +13,7 @@ from assignments.models import Assignment, AssignmentSubmission
 from attendance.models import AttendanceSession, StudentAttendance, FacultyAttendance
 from fees.models import FeeCategory, FeeStructure, StudentInvoice, Payment, PaymentReceipt
 from payroll.models import SalaryStructure, Payslip
-from communication.models import Announcement, Notification, Conversation, Message, Document
+from communication.models import Announcement, Notification, Document
 from leave.models import LeaveRequest
 from printshop.models import PrintPricing, PrintOrder
 from library.models import Book, BookIssue, LibraryRequest
@@ -96,7 +96,6 @@ class Command(BaseCommand):
         # 3. Roles
         role_definitions = {
             "PRINCIPAL": ("Principal", list(permission_objs.keys())),
-            "MANAGEMENT": ("Management", ["student.view", "attendance.view", "fees.view", "payroll.view", "academics.view", "camera.view", "tracking.search"]),
             "HOD": ("Head of Department", ["student.view", "student.update", "attendance.view", "attendance.mark", "academics.view", "academics.manage", "camera.view", "tracking.search"]),
             "MENTOR": ("Mentor", ["student.view", "attendance.view", "academics.view", "camera.view", "tracking.search", "print.create", "library.view"]),
             "FACULTY": ("Faculty", ["student.view", "attendance.view", "attendance.mark", "print.create"]),
@@ -115,7 +114,6 @@ class Command(BaseCommand):
         default_password = "Password123!"
         demo_users_data = [
             ("principal@apex.edu", "Dr. Rajesh", "Nambiar", "PRINCIPAL", apex_college, True, True),
-            ("management@apex.edu", "Vikram", "Mehta", "MANAGEMENT", apex_college, False, False),
             ("hod.cs@apex.edu", "Dr. Aruna", "Sundaram", "HOD", apex_college, False, False),
             ("mentor.anil@apex.edu", "Anil", "Verma", "MENTOR", apex_college, False, False),
             ("faculty.priya@apex.edu", "Priya", "Nair", "FACULTY", apex_college, False, False),
@@ -794,51 +792,6 @@ class Command(BaseCommand):
                     "is_read": False,
                 }
             )
-
-        # 3. Conversations & Messages
-        conv1, _ = Conversation.objects.get_or_create(
-            college=apex_college,
-            subject="Academic Mentorship & Project Guidance",
-        )
-        conv1.participants.set([faculty_mentor.user, student_rahul.user])
-
-        Message.objects.get_or_create(
-            conversation=conv1,
-            sender=student_rahul.user,
-            content="Good morning Sir, I have drafted the problem statement for our distributed indexing system for review.",
-            defaults={"college": apex_college, "is_read": True}
-        )
-        Message.objects.get_or_create(
-            conversation=conv1,
-            sender=faculty_mentor.user,
-            content="Excellent Rahul. Please focus on fault-tolerance and replication factor calculations. Share the preliminary architecture doc.",
-            defaults={"college": apex_college, "is_read": True}
-        )
-        Message.objects.get_or_create(
-            conversation=conv1,
-            sender=student_rahul.user,
-            content="Thank you Sir, I will upload the draft PDF in the documents repository before Thursday.",
-            defaults={"college": apex_college, "is_read": False}
-        )
-
-        conv2, _ = Conversation.objects.get_or_create(
-            college=apex_college,
-            subject="CSE Curriculum Review & Lab Upgrades",
-        )
-        conv2.participants.set([faculty_hod.user, faculty_priya.user])
-
-        Message.objects.get_or_create(
-            conversation=conv2,
-            sender=faculty_hod.user,
-            content="Prof. Priya, let's review the Python Lab hardware specifications tomorrow at 10 AM.",
-            defaults={"college": apex_college, "is_read": True}
-        )
-        Message.objects.get_or_create(
-            conversation=conv2,
-            sender=faculty_priya.user,
-            content="Noted Dr. Aruna, I have compiled the benchmark requirements for GPU acceleration.",
-            defaults={"college": apex_college, "is_read": False}
-        )
 
         # 4. Documents & Certificates
         Document.objects.get_or_create(

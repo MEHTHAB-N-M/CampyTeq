@@ -1,18 +1,134 @@
 import React, { useEffect } from "react";
-import { useNavigate, Outlet } from "react-router-dom";
+import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
 import { useAuth } from "@/lib/auth";
 
+const ROLE_DEFAULT_ROUTE: Record<string, string> = {
+  PRINT_STAFF: "/dashboard/printshop",
+  LIBRARY_STAFF: "/dashboard/library",
+  SECURITY: "/dashboard/cameras",
+  ACCOUNTANT: "/dashboard/fees",
+};
+
+const ROLE_PERMITTED_ROUTES: Record<string, string[]> = {
+  PRINT_STAFF: ["/dashboard/printshop"],
+  LIBRARY_STAFF: ["/dashboard/library"],
+  SECURITY: ["/dashboard/cameras"],
+  ACCOUNTANT: ["/dashboard/fees", "/dashboard/announcements"],
+  STUDENT: [
+    "/dashboard",
+    "/dashboard/timetable",
+    "/dashboard/exams",
+    "/dashboard/assignments",
+    "/dashboard/attendance",
+    "/dashboard/fees",
+    "/dashboard/announcements",
+    "/dashboard/leave",
+    "/dashboard/documents",
+    "/dashboard/printshop",
+  ],
+  PARENT: [
+    "/dashboard",
+    "/dashboard/attendance",
+    "/dashboard/exams",
+    "/dashboard/fees",
+    "/dashboard/announcements",
+  ],
+  FACULTY: [
+    "/dashboard",
+    "/dashboard/students",
+    "/dashboard/timetable",
+    "/dashboard/exams",
+    "/dashboard/assignments",
+    "/dashboard/attendance",
+    "/dashboard/facilities",
+    "/dashboard/announcements",
+    "/dashboard/leave",
+    "/dashboard/documents",
+    "/dashboard/printshop",
+    "/dashboard/library",
+    "/dashboard/cameras",
+  ],
+  MENTOR: [
+    "/dashboard",
+    "/dashboard/students",
+    "/dashboard/timetable",
+    "/dashboard/exams",
+    "/dashboard/assignments",
+    "/dashboard/attendance",
+    "/dashboard/facilities",
+    "/dashboard/announcements",
+    "/dashboard/leave",
+    "/dashboard/documents",
+    "/dashboard/printshop",
+    "/dashboard/library",
+    "/dashboard/cameras",
+    "/dashboard/analytics",
+  ],
+  HOD: [
+    "/dashboard",
+    "/dashboard/students",
+    "/dashboard/faculty",
+    "/dashboard/timetable",
+    "/dashboard/exams",
+    "/dashboard/assignments",
+    "/dashboard/attendance",
+    "/dashboard/fees",
+    "/dashboard/facilities",
+    "/dashboard/announcements",
+    "/dashboard/leave",
+    "/dashboard/documents",
+    "/dashboard/printshop",
+    "/dashboard/library",
+    "/dashboard/cameras",
+    "/dashboard/analytics",
+  ],
+  PRINCIPAL: [
+    "/dashboard",
+    "/dashboard/students",
+    "/dashboard/faculty",
+    "/dashboard/timetable",
+    "/dashboard/exams",
+    "/dashboard/assignments",
+    "/dashboard/attendance",
+    "/dashboard/fees",
+    "/dashboard/payroll",
+    "/dashboard/facilities",
+    "/dashboard/announcements",
+    "/dashboard/leave",
+    "/dashboard/documents",
+    "/dashboard/library",
+    "/dashboard/cameras",
+    "/dashboard/analytics",
+    "/dashboard/audit",
+  ],
+  SUPER_ADMIN: ["*"],
+};
+
 export function DashboardLayout() {
   const { user, isLoading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
-    if (!isLoading && !user) {
-      navigate("/login", { replace: true });
+    if (!isLoading) {
+      if (!user) {
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      // Role route guard
+      const permitted = ROLE_PERMITTED_ROUTES[user.role];
+      if (permitted && !permitted.includes("*")) {
+        const currentPath = location.pathname.replace(/\/$/, "");
+        if (!permitted.includes(currentPath)) {
+          const fallback = ROLE_DEFAULT_ROUTE[user.role] || "/dashboard";
+          navigate(fallback, { replace: true });
+        }
+      }
     }
-  }, [user, isLoading, navigate]);
+  }, [user, isLoading, location.pathname, navigate]);
 
   if (isLoading || !user) {
     return (

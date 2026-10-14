@@ -109,7 +109,7 @@ export default function FeesPage() {
       setInvoices(invList);
 
       // Accountant / Admin Summary
-      if (["PRINCIPAL", "ACCOUNTANT", "MANAGEMENT"].includes(user?.role || "")) {
+      if (["SUPER_ADMIN", "PRINCIPAL", "ACCOUNTANT"].includes(user?.role || "")) {
         const sumRes = await apiRequest<FinancialSummary>("/fees/invoices/pending_summary/");
         setSummary(sumRes);
       }

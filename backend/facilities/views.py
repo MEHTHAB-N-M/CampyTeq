@@ -60,29 +60,31 @@ class FacilityBookingViewSet(viewsets.ModelViewSet):
             "facility", "requested_by", "department", "reviewed_by"
         )
 
-        if user.role == "PRINCIPAL":
+        if user.role in ["SUPER_ADMIN", "PRINCIPAL"]:
+            active_college = getattr(self.request, "college", None)
+            if active_college:
+                return qs.filter(college=active_college)
             return qs
 
         if user.role == "HOD":
-            # HOD sees department bookings and bookings routed to their oversight
+            # HOD sees department bookings, their own requests, and all approved bookings
             dept = getattr(getattr(user, "faculty_profile", None), "department", None)
             if dept:
-                return qs.filter(Q(department=dept) | Q(requested_by=user))
+                return qs.filter(Q(department=dept) | Q(requested_by=user) | Q(status="APPROVED"))
             return qs
 
-        if user.role == "MENTOR":
-            # Mentors see their own bookings
-            return qs.filter(requested_by=user)
+        if user.role in ["FACULTY", "MENTOR"]:
+            # Faculty & Mentors see their own bookings + all approved bookings to verify availability
+            return qs.filter(Q(requested_by=user) | Q(status="APPROVED"))
 
         # Other roles see only their own
         return qs.filter(requested_by=user)
 
     def perform_create(self, serializer):
         user = self.request.user
-        # Requirement: Only Mentors and Principal can raise facility booking requests
-        if user.role not in ["MENTOR", "PRINCIPAL"]:
+        if user.role not in ["FACULTY", "MENTOR", "HOD", "PRINCIPAL", "SUPER_ADMIN"]:
             raise permissions.exceptions.PermissionDenied(
-                "Facility booking requests can only be raised by Faculty Mentors."
+                "Facility booking requests can be raised by Faculty, Mentors, or HODs."
             )
 
         dept = None

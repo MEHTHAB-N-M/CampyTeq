@@ -412,9 +412,18 @@ export default function LeaveManagementPage() {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-card border border-border/80 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in-95">
             <h2 className="text-lg font-bold text-foreground mb-1">Apply for Leave</h2>
-            <p className="text-xs text-muted-foreground mb-4">
-              Your request will be routed to your mentor or department HOD for review.
+            <p className="text-xs text-muted-foreground mb-3">
+              {user?.role === "FACULTY"
+                ? "Your faculty leave request will be officially transmitted to your Head of Department (HOD) for sanction."
+                : "Your request will be routed to your department authority for review."}
             </p>
+
+            {user?.role === "FACULTY" && (
+              <div className="mb-4 p-2.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-between text-xs text-indigo-200">
+                <span className="font-semibold">Approval Authority:</span>
+                <span className="font-mono bg-indigo-500/20 px-2 py-0.5 rounded text-indigo-300">Head of Department (HOD)</span>
+              </div>
+            )}
 
             <form onSubmit={handleApply} className="space-y-4 text-xs">
               <div>

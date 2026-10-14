@@ -218,7 +218,7 @@ export default function CamerasAndTrackingPage() {
     }
   };
 
-  if (user && !["PRINCIPAL", "HOD", "MENTOR"].includes(user.role)) {
+  if (user && !["SUPER_ADMIN", "PRINCIPAL", "HOD", "MENTOR", "FACULTY", "SECURITY"].includes(user.role)) {
     return (
       <div className="p-8 flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
         <div className="h-16 w-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
@@ -226,7 +226,7 @@ export default function CamerasAndTrackingPage() {
         </div>
         <h2 className="text-xl font-bold text-foreground">Restricted Camera & CCTV Access</h2>
         <p className="text-sm text-muted-foreground max-w-md">
-          Campus surveillance and location tracking are strictly restricted to Principal, Heads of Department (HOD), and Mentors.
+          Campus surveillance and camera feeds are restricted to authorized security, administrators, and faculty.
         </p>
       </div>
     );
@@ -299,7 +299,8 @@ export default function CamerasAndTrackingPage() {
     return true;
   });
 
-  const isSecurityOrAdmin = ["PRINCIPAL", "HOD"].includes(user?.role || "");
+  const isSecurityOrAdmin = ["SUPER_ADMIN", "PRINCIPAL", "HOD", "SECURITY"].includes(user?.role || "");
+  const canSearchStudents = user?.role !== "SECURITY" && ["SUPER_ADMIN", "PRINCIPAL", "HOD", "MENTOR", "FACULTY"].includes(user?.role || "");
 
   return (
     <div className="p-6 md:p-8 space-y-8 max-w-7xl mx-auto">
@@ -400,17 +401,19 @@ export default function CamerasAndTrackingPage() {
           Live CCTV Feeds ({cameras.length})
         </button>
 
-        <button
-          onClick={() => setActiveTab("tracker")}
-          className={`px-4 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 transition-all ${
-            activeTab === "tracker"
-              ? "bg-primary text-primary-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-          }`}
-        >
-          <Navigation className="w-3.5 h-3.5 text-emerald-400" />
-          Student Location Tracker
-        </button>
+        {canSearchStudents && (
+          <button
+            onClick={() => setActiveTab("tracker")}
+            className={`px-4 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 transition-all ${
+              activeTab === "tracker"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            }`}
+          >
+            <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+            Student Location Tracker
+          </button>
+        )}
 
         {isSecurityOrAdmin && (
           <button
@@ -630,10 +633,22 @@ export default function CamerasAndTrackingPage() {
         </div>
       )}
 
+      {activeTab === "tracker" && !canSearchStudents && (
+        <div className="p-8 text-center bg-card/40 rounded-xl border border-border/60 max-w-lg mx-auto space-y-3">
+          <div className="h-12 w-12 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mx-auto">
+            <Lock className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-semibold text-foreground">Student Location Search Restricted</h3>
+          <p className="text-xs text-muted-foreground">
+            Security personnel have live CCTV video and perimeter surveillance access, but individual student tracking lookups are legally restricted to academic administrators, faculty, and mentors.
+          </p>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* TAB 2: STUDENT LOCATION TRACKER                                           */}
       {/* ========================================================================= */}
-      {activeTab === "tracker" && (
+      {activeTab === "tracker" && canSearchStudents && (
         <div className="space-y-6">
           {/* Compliance Notice */}
           <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3 text-xs md:text-sm text-amber-600 dark:text-amber-400">

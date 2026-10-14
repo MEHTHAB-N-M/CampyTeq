@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from communication.models import Announcement, Notification, Conversation, Message, Document
+from communication.models import Announcement, Notification, Document
 from accounts.models import User
 
 
@@ -45,56 +45,7 @@ class NotificationSerializer(serializers.ModelSerializer):
         read_only_fields = ["recipient", "created_at"]
 
 
-class MessageSerializer(serializers.ModelSerializer):
-    sender_name = serializers.CharField(source="sender.get_full_name", read_only=True)
-    sender_role = serializers.CharField(source="sender.role", read_only=True)
 
-    class Meta:
-        model = Message
-        fields = [
-            "id",
-            "conversation",
-            "sender",
-            "sender_name",
-            "sender_role",
-            "content",
-            "is_read",
-            "created_at",
-        ]
-        read_only_fields = ["sender", "created_at"]
-
-
-class ConversationSerializer(serializers.ModelSerializer):
-    participant_details = serializers.SerializerMethodField()
-    last_message = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Conversation
-        fields = [
-            "id",
-            "subject",
-            "participants",
-            "participant_details",
-            "last_message",
-            "last_message_at",
-        ]
-
-    def get_participant_details(self, obj):
-        return [
-            {
-                "id": str(u.id),
-                "name": u.get_full_name(),
-                "role": u.role,
-                "email": u.email,
-            }
-            for u in obj.participants.all()
-        ]
-
-    def get_last_message(self, obj):
-        last_msg = obj.messages.last()
-        if last_msg:
-            return MessageSerializer(last_msg).data
-        return None
 
 
 class DocumentSerializer(serializers.ModelSerializer):

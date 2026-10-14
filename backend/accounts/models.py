@@ -56,14 +56,15 @@ class Role(models.Model):
 
 class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     ROLE_CHOICES = [
+        ('SUPER_ADMIN', 'Super Admin'),
         ('PRINCIPAL', 'Principal'),
-        ('MANAGEMENT', 'Management'),
         ('HOD', 'Head of Department'),
         ('MENTOR', 'Mentor'),
         ('FACULTY', 'Faculty'),
         ('ACCOUNTANT', 'Accountant'),
         ('STUDENT', 'Student'),
         ('PARENT', 'Parent/Guardian'),
+        ('SECURITY', 'Security Administrator'),
         ('PRINT_STAFF', 'Print Shop Staff'),
         ('LIBRARY_STAFF', 'Library Staff'),
     ]

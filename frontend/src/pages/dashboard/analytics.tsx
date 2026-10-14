@@ -342,7 +342,7 @@ export default function AnalyticsPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {["PRINCIPAL", "HOD", "MANAGEMENT"].includes(user?.role || "") && (
+          {["SUPER_ADMIN", "PRINCIPAL", "HOD"].includes(user?.role || "") && (
             <button
               onClick={handleRunEvaluation}
               disabled={evaluating}
@@ -417,27 +417,50 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Fee Collection Velocity */}
-        <div className="p-5 rounded-2xl bg-gradient-to-b from-slate-900/90 to-slate-900/40 border border-slate-800/80 backdrop-blur-md relative overflow-hidden group hover:border-slate-700 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Fee Collection
-            </span>
-            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
-              <DollarSign className="w-4 h-4" />
+        {/* Fee Collection Velocity or Cohort Academic Health for Mentor */}
+        {user?.role === "MENTOR" ? (
+          <div className="p-5 rounded-2xl bg-gradient-to-b from-slate-900/90 to-slate-900/40 border border-slate-800/80 backdrop-blur-md relative overflow-hidden group hover:border-slate-700 transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Cohort Academic Health
+              </span>
+              <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400">
+                <Award className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-3xl font-bold tracking-tight text-white">
+                {academicData?.overall_performance?.pass_percentage ?? 88.5}%
+              </span>
+              <span className="text-xs text-slate-400">pass rate</span>
+            </div>
+            <div className="mt-2 text-xs text-emerald-400 flex items-center gap-1">
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span>Assigned cohort benchmark</span>
             </div>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-bold tracking-tight text-white">
-              {overview ? `${overview.financials.collection_percentage}%` : "—"}
-            </span>
-            <span className="text-xs text-slate-400">collected</span>
+        ) : (
+          <div className="p-5 rounded-2xl bg-gradient-to-b from-slate-900/90 to-slate-900/40 border border-slate-800/80 backdrop-blur-md relative overflow-hidden group hover:border-slate-700 transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Fee Collection
+              </span>
+              <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                <DollarSign className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-3xl font-bold tracking-tight text-white">
+                {overview ? `${overview.financials.collection_percentage}%` : "—"}
+              </span>
+              <span className="text-xs text-slate-400">collected</span>
+            </div>
+            <div className="mt-2 text-xs text-slate-400 truncate">
+              ₹{overview ? Number(overview.financials.total_collected).toLocaleString() : "0"} / ₹
+              {overview ? Number(overview.financials.total_invoiced).toLocaleString() : "0"}
+            </div>
           </div>
-          <div className="mt-2 text-xs text-slate-400 truncate">
-            ₹{overview ? Number(overview.financials.total_collected).toLocaleString() : "0"} / ₹
-            {overview ? Number(overview.financials.total_invoiced).toLocaleString() : "0"}
-          </div>
-        </div>
+        )}
 
         {/* AI Early Warning Alert */}
         <div className="p-5 rounded-2xl bg-gradient-to-b from-amber-950/30 via-slate-900/60 to-slate-900/40 border border-amber-500/30 backdrop-blur-md relative overflow-hidden group hover:border-amber-500/50 transition-all">
@@ -498,17 +521,19 @@ export default function AnalyticsPage() {
           ) : null}
         </button>
 
-        <button
-          onClick={() => setActiveTab("finance")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-            activeTab === "finance"
-              ? "bg-emerald-600/30 border border-emerald-500/50 text-emerald-200 shadow-md"
-              : "bg-slate-900/50 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent"
-          }`}
-        >
-          <DollarSign className="w-4 h-4" />
-          <span>Financial Velocity</span>
-        </button>
+        {user?.role !== "MENTOR" && (
+          <button
+            onClick={() => setActiveTab("finance")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+              activeTab === "finance"
+                ? "bg-emerald-600/30 border border-emerald-500/50 text-emerald-200 shadow-md"
+                : "bg-slate-900/50 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent"
+            }`}
+          >
+            <DollarSign className="w-4 h-4" />
+            <span>Financial Velocity</span>
+          </button>
+        )}
 
         <button
           onClick={() => setActiveTab("academics")}

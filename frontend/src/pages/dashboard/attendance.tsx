@@ -309,7 +309,9 @@ export default function AttendancePage() {
             )}
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            {user?.role === "FACULTY"
+            {user?.role === "STUDENT" || user?.role === "PARENT"
+              ? "View your semester attendance progress, lecture presence, and exam qualification status."
+              : user?.role === "FACULTY"
               ? "Practical laboratory attendance tracking, lab biometric sign-ins, and student lab rosters."
               : "Subject-wise lecture tracking, 1-click roster marking, faculty punches, and low-attendance alert watchlists."}
           </p>
@@ -325,85 +327,160 @@ export default function AttendancePage() {
       </div>
 
       {/* KPI Metric Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-card/50 border-border/60">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Class Attendance Rate</p>
-              <h3 className="text-xl font-bold text-foreground mt-1">
-                {studentSummary ? `${studentSummary.overall_percentage}%` : "89.4%"}
-              </h3>
-              <p className="text-[10px] text-emerald-400 mt-0.5">Threshold: 75.0% Mandatory</p>
-            </div>
-            <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-              <CalendarCheck className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card/50 border-border/60">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Conducted Sessions</p>
-              <h3 className="text-xl font-bold text-foreground mt-1">{sessions.length} Lectures</h3>
-              <p className="text-[10px] text-muted-foreground mt-0.5">Across all enrolled subjects</p>
-            </div>
-            <div className="h-10 w-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-              <BookOpen className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card/50 border-border/60">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Defaulter Watchlist</p>
-              <h3 className="text-xl font-bold text-rose-400 mt-1">{defaulters.length} Students</h3>
-              <p className="text-[10px] text-rose-400/80 mt-0.5">&lt; 75% Attendance alert</p>
-            </div>
-            <div className="h-10 w-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Quick Faculty Punch Widget */}
-        <Card className="bg-card/50 border-border/60">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Faculty Punch Duty</p>
-              <h3 className="text-sm font-semibold text-foreground mt-1">
-                {todayPunch?.check_in ? `In: ${todayPunch.check_in.slice(0, 5)}` : "Not Checked In"}
-              </h3>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                {todayPunch?.check_out ? `Out: ${todayPunch.check_out.slice(0, 5)}` : "Duty Active"}
-              </p>
-            </div>
-            {user?.role === "FACULTY" && (
+      {user?.role === "STUDENT" || user?.role === "PARENT" ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Student Card 1: My Attendance Rate */}
+          <Card className="bg-card/50 border-border/60">
+            <CardContent className="p-4 flex items-center justify-between">
               <div>
-                {!todayPunch?.check_in ? (
-                  <Button size="sm" variant="gradient" onClick={handlePunchIn} className="text-xs h-8 px-3">
-                    Check In
-                  </Button>
-                ) : !todayPunch?.check_out ? (
-                  <Button size="sm" variant="outline" onClick={handlePunchOut} className="text-xs h-8 px-3 border-amber-500/40 text-amber-400">
-                    Check Out
-                  </Button>
-                ) : (
-                  <Badge variant="success" className="text-[10px]">
-                    Completed
-                  </Badge>
-                )}
+                <p className="text-xs font-medium text-muted-foreground">My Attendance Rate</p>
+                <h3 className="text-xl font-bold text-foreground mt-1">
+                  {studentSummary ? `${studentSummary.overall_percentage}%` : "89.4%"}
+                </h3>
+                <p className="text-[10px] text-emerald-400 mt-0.5">Threshold: 75.0% Mandatory</p>
               </div>
-            )}
-            {user?.role !== "FACULTY" && (
-              <div className="h-10 w-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+              <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <CalendarCheck className="h-5 w-5" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Student Card 2: Lectures Attended */}
+          <Card className="bg-card/50 border-border/60">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Lectures Attended</p>
+                <h3 className="text-xl font-bold text-foreground mt-1">
+                  {studentSummary ? `${studentSummary.overall_attended} / ${studentSummary.overall_conducted}` : "48 / 54"} Classes
+                </h3>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Conducted this semester</p>
+              </div>
+              <div className="h-10 w-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <BookOpen className="h-5 w-5" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Student Card 3: Exam Eligibility Standing */}
+          <Card className="bg-card/50 border-border/60">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Exam Eligibility</p>
+                <h3 className={`text-xl font-bold mt-1 ${studentSummary?.is_defaulter ? "text-rose-400" : "text-emerald-400"}`}>
+                  {studentSummary?.is_defaulter ? "Shortage Risk" : "Eligible & Qualified"}
+                </h3>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {studentSummary?.is_defaulter ? "Requires minimum 75% attendance" : "Safe for semester examinations"}
+                </p>
+              </div>
+              <div className={`h-10 w-10 rounded-xl border flex items-center justify-center ${
+                studentSummary?.is_defaulter 
+                  ? "bg-rose-500/10 border-rose-500/20 text-rose-400" 
+                  : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+              }`}>
+                {studentSummary?.is_defaulter ? <AlertTriangle className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Student Card 4: Classes Missed */}
+          <Card className="bg-card/50 border-border/60">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Classes Missed</p>
+                <h3 className="text-xl font-bold text-foreground mt-1">
+                  {studentSummary ? `${studentSummary.overall_conducted - studentSummary.overall_attended} Classes` : "6 Classes"}
+                </h3>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Excused & approved leaves: 0</p>
+              </div>
+              <div className="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
                 <Clock className="h-5 w-5" />
               </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        /* Staff / Faculty / HOD / Principal Admin Strip */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card className="bg-card/50 border-border/60">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Class Attendance Rate</p>
+                <h3 className="text-xl font-bold text-foreground mt-1">
+                  {studentSummary ? `${studentSummary.overall_percentage}%` : "89.4%"}
+                </h3>
+                <p className="text-[10px] text-emerald-400 mt-0.5">Threshold: 75.0% Mandatory</p>
+              </div>
+              <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <CalendarCheck className="h-5 w-5" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/50 border-border/60">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Conducted Sessions</p>
+                <h3 className="text-xl font-bold text-foreground mt-1">{sessions.length} Lectures</h3>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Across all enrolled subjects</p>
+              </div>
+              <div className="h-10 w-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <BookOpen className="h-5 w-5" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/50 border-border/60">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Defaulter Watchlist</p>
+                <h3 className="text-xl font-bold text-rose-400 mt-1">{defaulters.length} Students</h3>
+                <p className="text-[10px] text-rose-400/80 mt-0.5">&lt; 75% Attendance alert</p>
+              </div>
+              <div className="h-10 w-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Quick Faculty Punch Widget */}
+          <Card className="bg-card/50 border-border/60">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Faculty Punch Duty</p>
+                <h3 className="text-sm font-semibold text-foreground mt-1">
+                  {todayPunch?.check_in ? `In: ${todayPunch.check_in.slice(0, 5)}` : "Not Checked In"}
+                </h3>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {todayPunch?.check_out ? `Out: ${todayPunch.check_out.slice(0, 5)}` : "Duty Active"}
+                </p>
+              </div>
+              {user?.role === "FACULTY" && (
+                <div>
+                  {!todayPunch?.check_in ? (
+                    <Button size="sm" variant="gradient" onClick={handlePunchIn} className="text-xs h-8 px-3">
+                      Check In
+                    </Button>
+                  ) : !todayPunch?.check_out ? (
+                    <Button size="sm" variant="outline" onClick={handlePunchOut} className="text-xs h-8 px-3 border-amber-500/40 text-amber-400">
+                      Check Out
+                    </Button>
+                  ) : (
+                    <Badge variant="success" className="text-[10px]">
+                      Completed
+                    </Badge>
+                  )}
+                </div>
+              )}
+              {user?.role !== "FACULTY" && (
+                <div className="h-10 w-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                  <Clock className="h-5 w-5" />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <div className="flex border-b border-border/60 gap-4 text-xs font-medium">
@@ -481,7 +558,7 @@ export default function AttendancePage() {
                       variant={studentSummary.is_defaulter ? "destructive" : "success"}
                       className="text-xs px-3 py-1 font-semibold"
                     >
-                      {studentSummary.is_defaulter ? "CRITICAL: Defaulter Watchlist" : "Good Standing (Safe)"}
+                      {studentSummary.is_defaulter ? "Low Attendance Warning (< 75%)" : "Good Standing (Safe)"}
                     </Badge>
                   </div>
                 </CardHeader>

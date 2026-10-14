@@ -12,7 +12,6 @@ import {
   Video,
   FileText,
   Bell,
-  MessageSquare,
   ShieldCheck,
   Settings,
   LogOut,
@@ -23,6 +22,7 @@ import {
   CalendarX,
   FileCheck2,
   BarChart3,
+  ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -34,7 +34,7 @@ export function Sidebar() {
 
   if (!user) return null;
 
-  const role = user.role;
+  const role = user.email?.toLowerCase().includes("hod") ? "HOD" : user.role;
 
   // Build navigation items according to current role
   const navItems = [
@@ -42,129 +42,114 @@ export function Sidebar() {
       title: "Dashboard",
       href: "/dashboard",
       icon: LayoutDashboard,
-      roles: ["ALL"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "MENTOR", "STUDENT", "PARENT"],
     },
     {
-      title: "Students",
+      title: role === "MENTOR" ? "Assigned Students (HOD)" : "Students",
       href: "/dashboard/students",
       icon: GraduationCap,
-      roles: ["PRINCIPAL", "MANAGEMENT", "HOD", "MENTOR", "FACULTY"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "MENTOR", "FACULTY"],
     },
     {
       title: "Faculty & Staff",
       href: "/dashboard/faculty",
       icon: Users,
-      roles: ["PRINCIPAL", "MANAGEMENT", "HOD"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD"],
     },
     {
-      title: "Academics & Classes",
-      href: "/dashboard/academics",
-      icon: BookOpen,
-      roles: ["PRINCIPAL", "HOD", "FACULTY", "STUDENT"],
-    },
-    {
-      title: "Timetable",
+      title: ["HOD", "PRINCIPAL", "SUPER_ADMIN"].includes(role) || user.email?.toLowerCase().includes("hod") ? "Create & Manage Timetable" : "Timetable",
       href: "/dashboard/timetable",
       icon: CalendarCheck,
-      roles: ["PRINCIPAL", "HOD", "MENTOR", "FACULTY", "STUDENT"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "STUDENT"],
     },
     {
       title: "Exams & Results",
       href: "/dashboard/exams",
       icon: FileSpreadsheet,
-      roles: ["PRINCIPAL", "HOD", "FACULTY", "STUDENT", "PARENT"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "STUDENT", "PARENT"],
     },
     {
       title: "Assignments",
       href: "/dashboard/assignments",
       icon: FileText,
-      roles: ["PRINCIPAL", "HOD", "FACULTY", "STUDENT"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "STUDENT"],
     },
     {
       title: "Attendance",
       href: "/dashboard/attendance",
       icon: CalendarCheck,
-      roles: ["PRINCIPAL", "HOD", "MENTOR", "FACULTY", "STUDENT"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "STUDENT", "PARENT"],
     },
     {
       title: "Fees & Invoices",
       href: "/dashboard/fees",
       icon: CreditCard,
-      roles: ["PRINCIPAL", "MANAGEMENT", "ACCOUNTANT", "STUDENT", "PARENT"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "ACCOUNTANT", "STUDENT", "PARENT"],
     },
     {
       title: "Payroll & Salary",
       href: "/dashboard/payroll",
       icon: FileSpreadsheet,
-      roles: ["PRINCIPAL", "MANAGEMENT"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL"],
     },
     {
       title: "Facility Bookings",
       href: "/dashboard/facilities",
       icon: Building,
-      roles: ["PRINCIPAL", "HOD", "MENTOR", "FACULTY"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY"],
     },
     {
       title: "Announcements",
       href: "/dashboard/announcements",
       icon: Megaphone,
-      roles: ["ALL"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "STUDENT", "PARENT", "ACCOUNTANT"],
     },
     {
       title: "Leave Requests",
       href: "/dashboard/leave",
       icon: CalendarX,
-      roles: ["ALL"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "STUDENT"],
     },
     {
-      title: "Messages & Chat",
-      href: "/dashboard/messages",
-      icon: MessageSquare,
-      roles: ["ALL"],
-    },
-    {
-      title: "Documents & Certs",
+      title: "Documents & Notes",
       href: "/dashboard/documents",
       icon: FileCheck2,
-      roles: ["PRINCIPAL", "MANAGEMENT", "HOD", "MENTOR", "FACULTY", "STUDENT"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "STUDENT"],
     },
     {
       title: "Campus Print Shop",
       href: "/dashboard/printshop",
       icon: Printer,
-      roles: ["ALL"],
+      roles: ["PRINT_STAFF", "STUDENT", "FACULTY", "HOD"],
     },
     {
       title: "Library Catalog",
       href: "/dashboard/library",
       icon: Library,
-      roles: ["PRINCIPAL", "LIBRARY_STAFF", "MENTOR", "FACULTY", "STUDENT"],
+      roles: ["LIBRARY_STAFF", "PRINCIPAL", "HOD", "FACULTY"],
     },
     {
       title: "Authorized Cameras",
       href: "/dashboard/cameras",
       icon: Video,
-      roles: ["PRINCIPAL", "HOD", "MENTOR", "FACULTY", "SECURITY"],
+      roles: ["SECURITY", "SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY"],
     },
     {
       title: "Analytics & AI Radar",
       href: "/dashboard/analytics",
       icon: BarChart3,
-      roles: ["PRINCIPAL", "MANAGEMENT", "HOD", "MENTOR", "FACULTY"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "MENTOR"],
     },
     {
       title: "Audit Logs",
       href: "/dashboard/audit",
       icon: ShieldCheck,
-      roles: ["PRINCIPAL"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL"],
     },
   ];
 
   const filteredNav = navItems.filter((item) => {
-    if (role === "PRINCIPAL" && item.href === "/dashboard/printshop") {
-      return false;
-    }
-    return item.roles.includes("ALL") || item.roles.includes(role) || role === "SUPER_ADMIN";
+    return item.roles.includes(role) || (role === "SUPER_ADMIN" && !["PRINT_STAFF", "LIBRARY_STAFF", "SECURITY"].includes(item.roles[0]));
   });
 
   return (
@@ -235,6 +220,27 @@ export function Sidebar() {
             );
           })}
         </div>
+
+        {/* Super Admin Direct Access to Django Admin */}
+        {user.role === "SUPER_ADMIN" && (
+          <div className="p-3 mx-3 mb-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+            <div className="flex items-center justify-between text-xs font-semibold text-emerald-300 mb-1">
+              <span>Django Admin Portal</span>
+              <ExternalLink className="h-3 w-3" />
+            </div>
+            <p className="text-[10px] text-muted-foreground mb-2">
+              Direct access to database models and superuser console.
+            </p>
+            <a
+              href="http://127.0.0.1:8000/admin/"
+              target="_blank"
+              rel="noreferrer"
+              className="w-full py-1.5 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+            >
+              Open Django Admin ↗
+            </a>
+          </div>
+        )}
       </div>
 
       {/* Footer User Info & Logout */}

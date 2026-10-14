@@ -10,8 +10,6 @@ from students.models import Student, MentorAssignment
 from communication.models import (
     Announcement,
     Notification,
-    Conversation,
-    Message,
     Document,
 )
 from leave.models import LeaveRequest
@@ -174,32 +172,6 @@ class TestCommunicationWorkflow:
         res = self.client.get("/api/v1/communication/notifications/unread_count/")
         assert res.data["unread_count"] == 0
 
-    def test_conversations_and_messages(self):
-        conv = Conversation.objects.create(
-            college=self.college, subject="Mentorship Chat"
-        )
-        conv.participants.set([self.mentor_user, self.student_user])
-
-        # Student sends message
-        self.client.force_authenticate(user=self.student_user)
-        res = self.client.post(f"/api/v1/communication/conversations/{conv.id}/send_message/", {
-            "content": "Hello Prof, when is our review?"
-        })
-        assert res.status_code == 201
-        assert Message.objects.filter(conversation=conv).count() == 1
-
-        # Mentor should have received an in-app notification
-        assert Notification.objects.filter(
-            recipient=self.mentor_user, notification_type="MESSAGE"
-        ).exists()
-
-        # Non-participant (faculty_user) cannot view this conversation
-        self.client.force_authenticate(user=self.faculty_user)
-        res = self.client.get("/api/v1/communication/conversations/")
-        assert res.status_code == 200
-        items = res.data.get("results") if isinstance(res.data, dict) and "results" in res.data else res.data
-        conv_ids = [str(c["id"]) for c in items]
-        assert str(conv.id) not in conv_ids
 
     def test_documents_repository_and_scoping(self):
         # Doc 1: Student 1 private certificate

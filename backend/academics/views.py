@@ -3,7 +3,7 @@ from django.db.models import Q
 from rest_framework import viewsets, permissions, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from common.permissions import IsAdminOrPrincipal, IsTenantMember
+from common.permissions import IsAdminOrPrincipal, IsAdminPrincipalOrHOD, IsTenantMember
 from .models import Course, Batch, Semester, Subject, FacultySubject, TimetableEntry
 from .serializers import (
     CourseSerializer,
@@ -199,7 +199,7 @@ class TimetableEntryViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdminOrPrincipal(), IsTenantMember()]
+            return [IsAdminPrincipalOrHOD(), IsTenantMember()]
         return [permissions.IsAuthenticated(), IsTenantMember()]
 
     def get_queryset(self):
@@ -219,20 +219,22 @@ class TimetableEntryViewSet(viewsets.ModelViewSet):
         if day:
             qs = qs.filter(day_of_week=day)
 
-        if user.role == 'PRINCIPAL' and not user.college_id:
+        if user.role in ['SUPER_ADMIN', 'PRINCIPAL'] and not user.college_id:
             return qs
 
         qs = qs.filter(college=user.college)
 
-        # Restrict Faculty to Lab sessions only (Practical/Hybrid or Lab rooms)
-        if user.role == 'FACULTY':
-            qs = qs.filter(
-                Q(subject__subject_type__in=['PRACTICAL', 'HYBRID']) |
-                Q(room__icontains='Lab')
-            )
+        # Faculty sees all their assigned lectures and labs
+        if user.role in ['FACULTY', 'MENTOR']:
             faculty_profile = getattr(user, 'faculty_profile', None)
             if faculty_profile:
                 qs = qs.filter(faculty=faculty_profile)
+
+        # HOD can filter to their department
+        elif user.role == 'HOD':
+            faculty_profile = getattr(user, 'faculty_profile', None)
+            if faculty_profile and faculty_profile.department:
+                qs = qs.filter(course__department=faculty_profile.department)
 
         return qs
 

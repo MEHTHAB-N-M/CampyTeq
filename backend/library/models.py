@@ -113,6 +113,7 @@ class LibraryRequest(TenantModel):
         BORROW = "BORROW", "Borrow / Issue Request"
         RESERVATION = "RESERVATION", "Book Reservation"
         PROCUREMENT = "PROCUREMENT", "New Title Acquisition"
+        CLASS_PERIOD = "CLASS_PERIOD", "Class Library Period Booking"
 
     class RequestStatus(models.TextChoices):
         PENDING = "PENDING", "Pending Review"

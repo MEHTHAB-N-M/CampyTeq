@@ -33,6 +33,35 @@ class UserProfileView(views.APIView):
         return Response(serializer.data)
 
 
+class SwitchRoleView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        target_role = request.data.get('role')
+        if target_role not in ['FACULTY', 'MENTOR']:
+            return Response(
+                {'detail': 'Target role must be FACULTY or MENTOR.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = request.user
+        has_faculty = hasattr(user, 'faculty_profile')
+        if user.role not in ['FACULTY', 'MENTOR'] and not has_faculty:
+            return Response(
+                {'detail': 'Only faculty and mentors can switch between these roles.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        user.role = target_role
+        user.save(update_fields=['role'])
+        serializer = UserProfileSerializer(user)
+        return Response({
+            'message': f'Active role successfully switched to {target_role}',
+            'role': target_role,
+            'user': serializer.data
+        })
+
+
 class ChangePasswordView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -77,11 +106,12 @@ class UserViewSet(viewsets.ModelViewSet):
 
         qs = User.objects.filter(is_deleted=False).select_related('college').prefetch_related('custom_roles')
 
-        if user.role == 'PRINCIPAL':
-            college_filter = self.request.query_params.get('college_id')
+        if user.role in ['SUPER_ADMIN', 'PRINCIPAL']:
+            college_filter = self.request.query_params.get('college_id') or getattr(self.request, 'college', None)
             if college_filter:
-                return qs.filter(college_id=college_filter)
-            if user.college_id:
+                cid = getattr(college_filter, 'id', college_filter)
+                return qs.filter(college_id=cid)
+            if user.role == 'PRINCIPAL' and user.college_id:
                 return qs.filter(college_id=user.college_id)
             return qs
 
@@ -90,9 +120,9 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        college = getattr(user, 'college', None)
+        college = getattr(user, 'college', None) or getattr(self.request, 'college', None)
         college_id = self.request.data.get('college_id') or getattr(college, 'id', None)
-        if college_id and user.role == 'PRINCIPAL':
+        if college_id and user.role in ['SUPER_ADMIN', 'PRINCIPAL']:
             serializer.save(college_id=college_id)
         else:
             serializer.save(college=user.college)

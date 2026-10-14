@@ -18,13 +18,8 @@ class TenantMiddleware(MiddlewareMixin):
         if not user or not user.is_authenticated:
             return
 
-        # Direct college assignment from user
-        if hasattr(user, 'college') and user.college:
-            request.college = user.college
-            return
-
-        # For PRINCIPAL users, support tenant context switching via header
-        if getattr(user, 'role', '') == 'PRINCIPAL':
+        # For SUPER_ADMIN and PRINCIPAL users, support active college context switching via header
+        if getattr(user, 'role', '') in ['SUPER_ADMIN', 'PRINCIPAL']:
             college_id_header = request.headers.get('X-College-ID')
             if college_id_header:
                 try:
@@ -33,5 +28,11 @@ class TenantMiddleware(MiddlewareMixin):
                     college = College.objects.filter(id=uuid_val, is_deleted=False).first()
                     if college:
                         request.college = college
+                        return
                 except (ValueError, ValidationError):
                     pass
+
+        # Direct college assignment from user
+        if hasattr(user, 'college') and user.college:
+            request.college = user.college
+            return

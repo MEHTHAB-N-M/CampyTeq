@@ -21,7 +21,7 @@ class SalaryStructureViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        if user.role not in ["PRINCIPAL", "MANAGEMENT"]:
+        if user.role not in ["PRINCIPAL", "SUPER_ADMIN"]:
             return SalaryStructure.objects.none()
         return SalaryStructure.objects.filter(
             college=user.college
@@ -46,7 +46,7 @@ class PayslipViewSet(viewsets.ModelViewSet):
             if hasattr(user, "faculty_profile"):
                 return qs.filter(faculty=user.faculty_profile)
             return Payslip.objects.none()
-        elif user.role not in ["PRINCIPAL", "MANAGEMENT"]:
+        elif user.role not in ["PRINCIPAL", "SUPER_ADMIN"]:
             return Payslip.objects.none()
         return qs
 
@@ -57,7 +57,7 @@ class PayslipViewSet(viewsets.ModelViewSet):
     def generate_monthly(self, request):
         """Generates monthly payroll payslips for all active faculty with salary structures."""
         user = request.user
-        if user.role not in ["PRINCIPAL", "MANAGEMENT"]:
+        if user.role not in ["PRINCIPAL", "SUPER_ADMIN"]:
             return Response(
                 {"error": "Only institutional administrators can generate payroll"},
                 status=status.HTTP_403_FORBIDDEN,
@@ -120,7 +120,7 @@ class PayslipViewSet(viewsets.ModelViewSet):
     def mark_paid(self, request, pk=None):
         """Marks a payslip as disbursed with reference number."""
         user = request.user
-        if user.role not in ["PRINCIPAL", "MANAGEMENT"]:
+        if user.role not in ["PRINCIPAL", "SUPER_ADMIN"]:
             return Response({"error": "Unauthorized to disburse payroll"}, status=status.HTTP_403_FORBIDDEN)
 
         payslip = self.get_object()

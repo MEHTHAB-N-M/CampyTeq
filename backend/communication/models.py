@@ -103,42 +103,6 @@ class Notification(TenantModel):
         return f"{self.recipient.email} - {self.title} ({'Read' if self.is_read else 'Unread'})"
 
 
-class Conversation(TenantModel):
-    participants = models.ManyToManyField(
-        "accounts.User",
-        related_name="conversations",
-    )
-    subject = models.CharField(max_length=200, blank=True, default="")
-    last_message_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["-last_message_at"]
-
-    def __str__(self):
-        return f"Conversation: {self.subject or self.id}"
-
-
-class Message(TenantModel):
-    conversation = models.ForeignKey(
-        Conversation,
-        on_delete=models.CASCADE,
-        related_name="messages",
-    )
-    sender = models.ForeignKey(
-        "accounts.User",
-        on_delete=models.CASCADE,
-        related_name="sent_messages",
-    )
-    content = models.TextField()
-    is_read = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["created_at"]
-
-    def __str__(self):
-        return f"{self.sender.get_full_name()}: {self.content[:30]}"
-
 
 class Document(TenantModel):
     class DocumentType(models.TextChoices):
@@ -148,6 +112,7 @@ class Document(TenantModel):
         ID_PROOF = "ID_PROOF", "Identity Document"
         TRANSFER_CERTIFICATE = "TRANSFER_CERTIFICATE", "Transfer Certificate"
         SYLLABUS_COPY = "SYLLABUS_COPY", "Course Syllabus Copy"
+        LECTURE_NOTES = "LECTURE_NOTES", "Lecture Notes & Study Material"
 
     class VerificationStatus(models.TextChoices):
         VERIFIED = "VERIFIED", "Verified / Official"

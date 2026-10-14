@@ -9,6 +9,9 @@ from datetime import date, timedelta
 import uuid
 
 from common.permissions import IsTenantMember
+from accounts.models import User
+from colleges.models import College
+from cameras.models import Camera
 from students.models import Student, MentorAssignment
 from faculty.models import Faculty
 from departments.models import Department
@@ -30,7 +33,7 @@ class IsAnalyticsViewer(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         return request.user.role in [
-            'PRINCIPAL', 'MANAGEMENT', 'HOD',
+            'SUPER_ADMIN', 'PRINCIPAL', 'HOD',
             'MENTOR', 'ACCOUNTANT', 'FACULTY', 'STUDENT', 'PARENT'
         ]
 
@@ -41,11 +44,23 @@ class InstitutionalOverviewView(APIView):
 
     def get(self, request):
         user = request.user
-        college = user.college
+        college = getattr(request, 'college', None) or user.college
+        college_param = request.query_params.get('college_id')
+        if college_param and user.role == 'SUPER_ADMIN':
+            if college_param == 'ALL':
+                college = None
+            else:
+                try:
+                    uuid_val = uuid.UUID(college_param)
+                    college = College.objects.filter(id=uuid_val).first()
+                except (ValueError, Exception):
+                    pass
 
         # Scoped querysets
         student_qs = Student.objects.filter(is_deleted=False)
         faculty_qs = Faculty.objects.filter(is_deleted=False)
+        principal_qs = User.objects.filter(role='PRINCIPAL', is_deleted=False)
+        camera_qs = Camera.objects.filter(is_deleted=False)
         dept_qs = Department.objects.filter(status='ACTIVE')
         invoice_qs = StudentInvoice.objects.all()
         payment_qs = Payment.objects.filter(status='SUCCESS')
@@ -54,6 +69,8 @@ class InstitutionalOverviewView(APIView):
         if college:
             student_qs = student_qs.filter(college=college)
             faculty_qs = faculty_qs.filter(college=college)
+            principal_qs = principal_qs.filter(college=college)
+            camera_qs = camera_qs.filter(college=college)
             dept_qs = dept_qs.filter(college=college)
             invoice_qs = invoice_qs.filter(college=college)
             payment_qs = payment_qs.filter(college=college)
@@ -61,6 +78,8 @@ class InstitutionalOverviewView(APIView):
 
         total_students = student_qs.count()
         total_faculty = faculty_qs.count()
+        total_principals = principal_qs.count()
+        total_cameras = camera_qs.count()
         total_depts = dept_qs.count()
 
         # Attendance calculation
@@ -84,11 +103,40 @@ class InstitutionalOverviewView(APIView):
         low_risk_count = risk_qs.filter(risk_level='LOW').count()
         total_at_risk = critical_risk_count + high_risk_count
 
+        # Cross-college comparison for Super Admin
+        college_comparison = []
+        if user.role == 'SUPER_ADMIN':
+            for col in College.objects.filter(is_deleted=False):
+                c_students = Student.objects.filter(college=col, is_deleted=False).count()
+                c_faculty = Faculty.objects.filter(college=col, is_deleted=False).count()
+                c_cameras = Camera.objects.filter(college=col, is_deleted=False).count()
+                c_principal = User.objects.filter(college=col, role='PRINCIPAL').first()
+                c_att_total = StudentAttendance.objects.filter(college=col).count()
+                c_att_pres = StudentAttendance.objects.filter(college=col, status__in=['PRESENT', 'LATE']).count()
+                c_att_pct = round((c_att_pres / c_att_total * 100), 1) if c_att_total > 0 else 85.0
+                c_fee_col = Payment.objects.filter(college=col, status='SUCCESS').aggregate(t=Sum('amount'))['t'] or Decimal("0.00")
+                c_at_risk = StudentAIAnalysis.objects.filter(college=col, is_latest=True, risk_level__in=['HIGH', 'CRITICAL']).count()
+
+                college_comparison.append({
+                    'id': str(col.id),
+                    'name': col.name,
+                    'code': col.code,
+                    'total_students': c_students,
+                    'total_faculty': c_faculty,
+                    'total_cameras': c_cameras,
+                    'principal_name': c_principal.get_full_name() if c_principal else "Not Assigned",
+                    'attendance_percentage': c_att_pct,
+                    'fee_collected': str(c_fee_col),
+                    'at_risk_students': c_at_risk,
+                })
+
         return Response({
             'success': True,
             'data': {
                 'total_students': total_students,
                 'total_faculty': total_faculty,
+                'total_principals': total_principals,
+                'total_cameras': total_cameras,
                 'total_departments': total_depts,
                 'overall_attendance_percentage': overall_attendance_pct,
                 'financials': {
@@ -104,7 +152,8 @@ class InstitutionalOverviewView(APIView):
                     'medium_risk': medium_risk_count,
                     'low_risk': low_risk_count,
                     'action_required_count': total_at_risk,
-                }
+                },
+                'college_comparison': college_comparison,
             }
         })
 
@@ -285,7 +334,7 @@ class StudentAIAnalysisViewSet(viewsets.ReadOnlyModelViewSet):
 
         if user.role == 'PRINCIPAL' and not user.college:
             pass
-        elif user.role in ['PRINCIPAL', 'MANAGEMENT', 'HOD']:
+        elif user.role in ['SUPER_ADMIN', 'PRINCIPAL', 'HOD']:
             qs = qs.filter(college=user.college)
             if user.role == 'HOD':
                 # Optional: focus on HOD's department
@@ -392,10 +441,10 @@ class StudentAIAnalysisViewSet(viewsets.ReadOnlyModelViewSet):
     def evaluate_all(self, request):
         """Batch evaluation of all students in college (Admins/Principal only)."""
         user = request.user
-        if user.role not in ['PRINCIPAL', 'MANAGEMENT']:
+        if user.role not in ['SUPER_ADMIN', 'PRINCIPAL']:
             return Response({
                 'success': False,
-                'message': "Only Principals and Management can run batch AI risk evaluations.",
+                'message': "Only Principals and Super Admins can run batch AI risk evaluations.",
                 'code': 'PERMISSION_DENIED'
             }, status=status.HTTP_403_FORBIDDEN)
 
@@ -433,7 +482,7 @@ class StudentAIAnalysisViewSet(viewsets.ReadOnlyModelViewSet):
                     'message': "Mentors can only review early-warning assessments for their assigned students.",
                     'code': 'MENTOR_COHORT_VIOLATION'
                 }, status=status.HTTP_403_FORBIDDEN)
-        elif user.role not in ['PRINCIPAL', 'HOD', 'MANAGEMENT', 'FACULTY']:
+        elif user.role not in ['SUPER_ADMIN', 'PRINCIPAL', 'HOD', 'FACULTY']:
             return Response({
                 'success': False,
                 'message': "Unauthorized to review academic risk assessments.",
