@@ -98,6 +98,7 @@ const ROLE_PERMITTED_ROUTES: Record<string, string[]> = {
     "/dashboard/announcements",
     "/dashboard/leave",
     "/dashboard/documents",
+    "/dashboard/printshop",
     "/dashboard/library",
     "/dashboard/cameras",
     "/dashboard/analytics",

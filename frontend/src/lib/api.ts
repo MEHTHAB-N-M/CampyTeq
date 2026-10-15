@@ -12,7 +12,11 @@ export async function apiRequest<T = any>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const url = endpoint.startsWith("http") ? endpoint : `${API_BASE_URL}${endpoint}`;
+  let normalizedEndpoint = endpoint;
+  if (endpoint.startsWith("/api/v1/")) {
+    normalizedEndpoint = endpoint.substring("/api/v1".length);
+  }
+  const url = endpoint.startsWith("http") ? endpoint : `${API_BASE_URL}${normalizedEndpoint}`;
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

@@ -36,20 +36,86 @@ campyteq/
 
 ---
 
+## Visual Tour & System Showcase
+
+### 1. Unified Authentication & 12-Role Persona Switcher
+> Instant persona simulation across Super Admin, Principal, HOD, Faculty, Student, Security, Accountant, Print Staff, and Library Staff under strict tenant isolation.
+
+![Unified Authentication & Persona Switcher](docs/screenshots/01_login_portal.png)
+
+---
+
+### 2. Leadership & Institutional Governance
+
+#### Executive Leadership Console (Principal / Board)
+> College-wide operational KPIs, faculty/student rosters, live camera health, statutory attendance metrics, and facility booking approvals.
+
+![Executive Leadership Console](docs/screenshots/02_executive_dashboard.png)
+
+#### Faculty & Mentor Command Center
+> Dual-mode perspective (Class Incharge vs. Cohort Mentor), live lecture schedules, session attendance registers, and student advisory notes.
+
+![Faculty & Mentor Portal](docs/screenshots/10_faculty_mentor_portal.png)
+
+---
+
+### 3. Student Academic Portal & AI Retention Radar
+
+#### Student Academic Hub
+> Today's timetable schedule, 75% examination eligibility gauge, instant hall-ticket downloads, and single-click service shortcuts.
+
+![Student Academic Hub](docs/screenshots/09_student_academic_hub.png)
+
+#### Campus Analytics & Explainable AI Early Warning Radar
+> Multi-factor predictive student retention engine evaluating attendance drops, missing assignments, exam scores, and leave frequencies.
+
+![Campus Analytics & AI Early Warning Radar](docs/screenshots/03_analytics_ai_radar.png)
+
+---
+
+### 4. Operations, Finance & Campus Facilities
+
+#### Lecture Attendance & Statutory 75% Defaulter Radar
+> 1-click bulk roster marking, RFID/biometric synchronization, and automated statutory defaulter watchlists.
+
+![Attendance Management & Defaulter Radar](docs/screenshots/04_attendance_radar.png)
+
+#### Campus Safety & Edge CV Camera Network
+> Stationary RTSP camera registry, live edge AI sighting stream, student journey breadcrumb stepping, and privacy audit logs.
+
+![Campus Safety & Edge CV Tracking](docs/screenshots/05_campus_safety_tracking.png)
+
+#### Fee Management & Payment Gateway Reconciliation
+> Semester tuition invoicing, partial payments, simulated UPI/NetBanking payment modal, and downloadable verified digital receipts.
+
+![Fees & Student Invoices](docs/screenshots/06_finance_fees.png)
+
+#### Digital Library & Circulation System
+> Real-time physical shelf availability, active borrow tracking, mentor acquisition requests, and automated overdue fine calculations.
+
+![University Library & Book Catalog](docs/screenshots/07_digital_library.png)
+
+#### Campus Fast-Print Station & Kiosk Queue
+> High-speed document print queue, automated page and binding cost estimator, and 4-digit kiosk pickup PIN verification.
+
+![Campus Print Station](docs/screenshots/08_print_shop_kiosk.png)
+
+---
+
 ## Implemented Modules (Phases 1 — 10)
 
-| Phase | Module | Key Features |
-|---|---|---|
-| **Phase 1** | **Multi-Tenant Foundation & RBAC** | Custom `User`, 12 institutional roles, JWT auth, tenant scoping, Swagger/OpenAPI docs, React dark-mode UI. |
-| **Phase 2** | **Institutional Hierarchy & People** | Departments (HOD), Courses, Batches, Semesters, Faculty profiles, Student directory, Mentor assignments. |
-| **Phase 3** | **Academics, Exams & Assignments** | Subjects, Weekly Timetable, Exam management, confidential results publishing, assignment grading & attachments. |
-| **Phase 4** | **Attendance & Faculty Timesheets** | Lecture/lab sessions, bulk student attendance marking, statutory 75% defaulters radar, faculty check-in/out working hours. |
-| **Phase 5** | **Finance, Fees & Payroll** | Fee structures, student billing invoices, payment gateway simulator, digital receipts, confidential faculty salary payslips. |
-| **Phase 6** | **Communication & Digital Governance** | Audience-scoped circulars, in-app notification drawer, mentorship chat threads, document repository, multi-tier leave workflow. |
-| **Phase 7** | **Print Shop & Digital Library** | Campus fast-print kiosk queue with pickup PINs, digital library catalog, book issues, and ₹5/day overdue fine calculator. |
-| **Phase 8** | **Campus Safety & Edge CV Tracking** | Camera registry, simulated video viewports, edge detection ingestion, student last seen & breadcrumb journey stepper, privacy audit log. |
-| **Phase 9** | **Analytics & AI Early Warning Radar** | Institutional KPI dashboard, attendance & financial velocity reports, explainable multi-factor AI academic risk engine, mentor counseling workflow. |
-| **Phase 10** | **Mobile App & Production Deployment** | Cross-platform React Native / Expo student companion app, Gunicorn WSGI, Nginx reverse proxy with rate limiting, Docker Compose production orchestration, GitHub Actions CI/CD. |
+| Phase | Module | Key Features | UI Showcase |
+|---|---|---|---|
+| **Phase 1** | **Multi-Tenant Foundation & RBAC** | Custom `User`, 12 institutional roles, JWT auth, tenant scoping, Swagger/OpenAPI docs, React dark-mode UI. | [View UI](#1-unified-authentication--12-role-persona-switcher) |
+| **Phase 2** | **Institutional Hierarchy & People** | Departments (HOD), Courses, Batches, Semesters, Faculty profiles, Student directory, Mentor assignments. | [View UI](#executive-leadership-console-principal--board) |
+| **Phase 3** | **Academics, Exams & Assignments** | Subjects, Weekly Timetable, Exam management, confidential results publishing, assignment grading & attachments. | [View UI](#student-academic-hub) |
+| **Phase 4** | **Attendance & Faculty Timesheets** | Lecture/lab sessions, bulk student attendance marking, statutory 75% defaulters radar, faculty check-in/out working hours. | [View UI](#lecture-attendance--statutory-75-defaulter-radar) |
+| **Phase 5** | **Finance, Fees & Payroll** | Fee structures, student billing invoices, payment gateway simulator, digital receipts, confidential faculty salary payslips. | [View UI](#fee-management--payment-gateway-reconciliation) |
+| **Phase 6** | **Communication & Digital Governance** | Audience-scoped circulars, in-app notification drawer, mentorship chat threads, document repository, multi-tier leave workflow. | [View UI](#faculty--mentor-command-center) |
+| **Phase 7** | **Print Shop & Digital Library** | Campus fast-print kiosk queue with pickup PINs, digital library catalog, book issues, and ₹5/day overdue fine calculator. | [View UI](#digital-library--circulation-system) |
+| **Phase 8** | **Campus Safety & Edge CV Tracking** | Camera registry, simulated video viewports, edge detection ingestion, student last seen & breadcrumb journey stepper, privacy audit log. | [View UI](#campus-safety--edge-cv-camera-network) |
+| **Phase 9** | **Analytics & AI Early Warning Radar** | Institutional KPI dashboard, attendance & financial velocity reports, explainable multi-factor AI academic risk engine, mentor counseling workflow. | [View UI](#campus-analytics--explainable-ai-early-warning-radar) |
+| **Phase 10** | **Mobile App & Production Deployment** | Cross-platform React Native / Expo student companion app, Gunicorn WSGI, Nginx reverse proxy with rate limiting, Docker Compose production orchestration, GitHub Actions CI/CD. | [View Architecture](#ecosystem-architecture) |
 
 ---
 

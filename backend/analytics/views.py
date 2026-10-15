@@ -292,12 +292,12 @@ class AcademicReportView(APIView):
         user = request.user
         college = user.college
 
-        res_qs = Result.objects.filter(is_published=True).select_related('exam_subject', 'exam_subject__subject')
+        res_qs = Result.objects.filter(is_deleted=False).select_related('exam_subject', 'exam_subject__subject')
         if college:
             res_qs = res_qs.filter(college=college)
 
         total_results = res_qs.count()
-        passed_results = res_qs.filter(is_passed=True).count()
+        passed_results = res_qs.exclude(grade__in=['F', 'AB']).count()
         overall_pass_pct = round((passed_results / total_results * 100), 1) if total_results > 0 else 100.0
 
         # Grade distribution
