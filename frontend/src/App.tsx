@@ -17,7 +17,6 @@ import FacultyPage from "./pages/dashboard/faculty";
 import FeesPage from "./pages/dashboard/fees";
 import LeaveManagementPage from "./pages/dashboard/leave";
 import LibraryPage from "./pages/dashboard/library";
-import PayrollPage from "./pages/dashboard/payroll";
 import PrintShopPage from "./pages/dashboard/printshop";
 import StudentsPage from "./pages/dashboard/students";
 import TimetablePage from "./pages/dashboard/timetable";
@@ -71,7 +70,6 @@ export default function App() {
             <Route path="fees" element={<FeesPage />} />
             <Route path="leave" element={<LeaveManagementPage />} />
             <Route path="library" element={<LibraryPage />} />
-            <Route path="payroll" element={<PayrollPage />} />
             <Route path="printshop" element={<PrintShopPage />} />
             <Route path="students" element={<StudentsPage />} />
             <Route path="timetable" element={<TimetablePage />} />

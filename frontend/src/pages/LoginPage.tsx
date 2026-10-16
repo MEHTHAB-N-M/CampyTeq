@@ -10,15 +10,17 @@ import { useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/api";
 
 const DEMO_ACCOUNTS = [
-  { role: "Super Admin", email: "superadmin@campyteq.io", note: "Global Platform Operator & Cross-College Administration", color: "border-purple-500/40 text-purple-300" },
-  { role: "Principal", email: "principal@apex.edu", note: "Apex Tech Executive Dashboard & Full Administration", color: "border-indigo-500/40 text-indigo-300" },
-  { role: "HOD (CS)", email: "hod.cs@apex.edu", note: "Department Roster & Facility Approvals", color: "border-cyan-500/40 text-cyan-300" },
-  { role: "Faculty & Mentor", email: "faculty.priya@apex.edu", note: "Classes, Attendance, Mentees & AI Radar", color: "border-emerald-500/40 text-emerald-300" },
-  { role: "Campus Security", email: "security.chief@apex.edu", note: "Perimeter Cameras & AI Face Sightings", color: "border-teal-500/40 text-teal-300" },
-  { role: "Student", email: "student.rahul@apex.edu", note: "Academic Hub, Attendance & Schedule", color: "border-amber-500/40 text-amber-300" },
-  { role: "Accountant", email: "accountant.raman@apex.edu", note: "Fees, Invoices & Fee Announcements", color: "border-yellow-500/40 text-yellow-300" },
-  { role: "Print Staff", email: "printstaff.dev@apex.edu", note: "Print Order Fulfillment & Chat", color: "border-pink-500/40 text-pink-300" },
-  { role: "Library Staff", email: "librarystaff.anita@apex.edu", note: "Circulation & Book Requests", color: "border-rose-500/40 text-rose-300" },
+  { role: "Super Admin", email: "superadmin@campyteq.io", note: "Global Platform Operator & Cross-College Admin", color: "border-purple-500/40 text-purple-300" },
+  { role: "Principal", email: "principal@apex.edu", note: "Apex Tech Executive Dashboard, Approvals & Oversight", color: "border-indigo-500/40 text-indigo-300" },
+  { role: "HOD (CS)", email: "hod.cs@apex.edu", note: "Department Roster, Attendance Oversight & Facility Approvals", color: "border-cyan-500/40 text-cyan-300" },
+  { role: "Faculty", email: "faculty.priya@apex.edu", note: "Class Teaching, Attendance Marking (Class Incharge & Mentor)", color: "border-emerald-500/40 text-emerald-300" },
+  { role: "Lab Faculty", email: "labfaculty.vikram@apex.edu", note: "Assigned Lab Batches, Lab Attendance & Practical Marks", color: "border-teal-500/40 text-teal-300" },
+  { role: "Accountant", email: "accountant.raman@apex.edu", note: "Fees, Invoices, Fee Waivers & Receipts", color: "border-yellow-500/40 text-yellow-300" },
+  { role: "Library Faculty", email: "librarystaff.anita@apex.edu", note: "Dedicated Library Resource & Room Booking Approvals", color: "border-rose-500/40 text-rose-300" },
+  { role: "Print Staff", email: "printstaff.dev@apex.edu", note: "Print Queue Processing, Fulfillment & Pickup", color: "border-pink-500/40 text-pink-300" },
+  { role: "Campus Security", email: "security.chief@apex.edu", note: "Live Perimeter Camera Feeds & Gate Control", color: "border-blue-500/40 text-blue-300" },
+  { role: "Student", email: "student.rahul@apex.edu", note: "Academic Hub, Timetable, Self Attendance & Marks", color: "border-amber-500/40 text-amber-300" },
+  { role: "Parent", email: "parent.sharma@apex.edu", note: "Scoped Ward Portal: Ward Attendance, Marks & Fees", color: "border-orange-500/40 text-orange-300" },
 ];
 
 export default function LoginPage() {
@@ -168,7 +170,7 @@ export default function LoginPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-2 max-h-[340px] overflow-y-auto pr-1">
+              <div className="grid grid-cols-2 gap-2 max-h-[440px] overflow-y-auto pr-1">
                 {DEMO_ACCOUNTS.map((account) => {
                   const isSelected = email === account.email;
                   return (

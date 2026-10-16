@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from colleges.serializers import CollegeSerializer
-from .models import User, Role, Permission, AuditLog
+from .models import User, Role, Permission, AuditLog, UserRole
 
 class PermissionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -24,10 +24,18 @@ class RoleSerializer(serializers.ModelSerializer):
         fields = ['id', 'code', 'name', 'description', 'permissions', 'permission_ids']
 
 
+class UserRoleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserRole
+        fields = ['id', 'role', 'source', 'is_active', 'created_at']
+
+
 class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     college = CollegeSerializer(read_only=True)
     college_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    active_role = serializers.SerializerMethodField()
+    available_roles = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
 
     class Meta:
@@ -40,6 +48,8 @@ class UserSerializer(serializers.ModelSerializer):
             'full_name',
             'phone',
             'role',
+            'active_role',
+            'available_roles',
             'status',
             'college',
             'college_id',
@@ -51,8 +61,15 @@ class UserSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
+    def get_active_role(self, obj):
+        return self.context.get('active_role') or obj.last_active_role or obj.get_default_active_role()
+
+    def get_available_roles(self, obj):
+        return obj.get_held_roles()
+
     def get_permissions(self, obj):
-        return list(obj.get_all_permissions_list())
+        active = self.get_active_role(obj)
+        return sorted(list(obj.get_all_permissions_list(acting_role=active)))
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
@@ -82,6 +99,8 @@ class UserCreateSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     college = CollegeSerializer(read_only=True)
+    active_role = serializers.SerializerMethodField()
+    available_roles = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
 
     class Meta:
@@ -94,6 +113,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'full_name',
             'phone',
             'role',
+            'active_role',
+            'available_roles',
             'status',
             'college',
             'profile_photo_url',
@@ -102,8 +123,15 @@ class UserProfileSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'email', 'role', 'status', 'college']
 
+    def get_active_role(self, obj):
+        return self.context.get('active_role') or obj.last_active_role or obj.get_default_active_role()
+
+    def get_available_roles(self, obj):
+        return obj.get_held_roles()
+
     def get_permissions(self, obj):
-        return list(obj.get_all_permissions_list())
+        active = self.get_active_role(obj)
+        return sorted(list(obj.get_all_permissions_list(acting_role=active)))
 
 
 class ChangePasswordSerializer(serializers.Serializer):
@@ -112,7 +140,17 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """Augments JWT token response with user profile, active college, and permission list."""
+    """Augments JWT token response with active_role claim, user profile, active college, and permission list."""
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        active_role = user.get_default_active_role()
+        token['active_role'] = active_role
+        token['role'] = user.role
+        token['email'] = user.email
+        token['college_id'] = str(user.college_id) if user.college_id else None
+        return token
+
     def validate(self, attrs):
         data = super().validate(attrs)
 
@@ -123,7 +161,13 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         if user.college and not user.college.is_active:
             raise serializers.ValidationError({'detail': 'Your institutional college subscription is inactive or suspended.'})
 
-        user_data = UserProfileSerializer(user).data
+        active_role = user.get_default_active_role()
+        user.last_active_role = active_role
+        user.save(update_fields=['last_active_role'])
+
+        user_data = UserProfileSerializer(user, context={'active_role': active_role}).data
+        data['active_role'] = active_role
+        data['available_roles'] = user.get_held_roles()
         data['user'] = user_data
         return data
 
@@ -137,6 +181,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
             'id',
             'user',
             'user_email',
+            'acting_role',
             'action',
             'resource_type',
             'resource_id',

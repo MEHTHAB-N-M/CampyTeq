@@ -12,11 +12,10 @@ from exams.models import Exam, ExamSubject, Result
 from assignments.models import Assignment, AssignmentSubmission
 from attendance.models import AttendanceSession, StudentAttendance, FacultyAttendance
 from fees.models import FeeCategory, FeeStructure, StudentInvoice, Payment, PaymentReceipt
-from payroll.models import SalaryStructure, Payslip
 from communication.models import Announcement, Notification, Document
 from leave.models import LeaveRequest
 from printshop.models import PrintPricing, PrintOrder
-from library.models import Book, BookIssue, LibraryRequest
+from library.models import LibraryBooking
 from cameras.models import CameraZone, Camera
 from tracking.models import BiometricProfile, DetectionEvent, StudentLatestLocation, TrackingAccessLog
 from analytics.models import StudentAIAnalysis
@@ -75,8 +74,6 @@ class Command(BaseCommand):
             ("fees.create", "Create Fee Structure", "Finance"),
             ("fees.update", "Update Fee Invoices", "Finance"),
             ("payments.record", "Record Payments", "Finance"),
-            ("payroll.view", "View Payroll", "Payroll"),
-            ("payroll.process", "Process Payroll", "Payroll"),
             ("camera.view", "View Camera Status", "Security"),
             ("camera.manage", "Manage Cameras & Zones", "Security"),
             ("tracking.search", "Search Authorized Last-Detected Location", "Security"),
@@ -121,13 +118,16 @@ class Command(BaseCommand):
             ("student.rahul@apex.edu", "Rahul", "Kumar", "STUDENT", apex_college, False, False),
             ("parent.sharma@apex.edu", "Suresh", "Sharma", "PARENT", apex_college, False, False),
             ("printstaff.dev@apex.edu", "Dev", "Prasad", "PRINT_STAFF", apex_college, False, False),
-            ("librarystaff.anita@apex.edu", "Anita", "Deshmukh", "LIBRARY_STAFF", apex_college, False, False),
+            ("librarystaff.anita@apex.edu", "Anita", "Deshmukh", "LIBRARY_FACULTY", apex_college, False, False),
+            ("security.chief@apex.edu", "Karan", "Thakur", "SECURITY", apex_college, False, False),
+            ("labfaculty.vikram@apex.edu", "Vikram", "Mehta", "LAB_FACULTY", apex_college, False, False),
             ("ananya.sen@apex.edu", "Ananya", "Sen", "STUDENT", apex_college, False, False),
             ("rohan.gupta@apex.edu", "Rohan", "Gupta", "STUDENT", apex_college, False, False),
             ("sneha.patil@apex.edu", "Sneha", "Patil", "STUDENT", apex_college, False, False),
         ]
 
         users = {}
+        from accounts.models import UserRole
         for email, fn, ln, r, col, is_staff, is_super in demo_users_data:
             user, _ = User.objects.get_or_create(
                 email=email,
@@ -137,8 +137,13 @@ class Command(BaseCommand):
                     "status": "ACTIVE"
                 }
             )
+            user.role = r
             user.set_password(default_password)
             user.save()
+            UserRole.objects.update_or_create(
+                user=user, college=col, role=r,
+                defaults={"source": "base", "is_active": True}
+            )
             users[email] = user
 
         # 5. Departments
@@ -627,91 +632,7 @@ class Command(BaseCommand):
             }
         )
 
-        # 16. Faculty Salary Structures & Payroll
-        # Priya Nair (Assistant Professor)
-        ss_priya, _ = SalaryStructure.objects.get_or_create(
-            faculty=faculty_priya,
-            defaults={
-                "college": apex_college,
-                "basic_salary": Decimal("65000.00"),
-                "hra": Decimal("15000.00"),
-                "da": Decimal("10000.00"),
-                "special_allowance": Decimal("5000.00"),
-                "pf_deduction": Decimal("4000.00"),
-                "tax_deduction": Decimal("6000.00"),
-                "other_deductions": Decimal("0.00"),
-            }
-        )
-        # Anil Verma (Associate Professor & Mentor)
-        ss_anil, _ = SalaryStructure.objects.get_or_create(
-            faculty=faculty_mentor,
-            defaults={
-                "college": apex_college,
-                "basic_salary": Decimal("80000.00"),
-                "hra": Decimal("20000.00"),
-                "da": Decimal("12000.00"),
-                "special_allowance": Decimal("8000.00"),
-                "pf_deduction": Decimal("5000.00"),
-                "tax_deduction": Decimal("9000.00"),
-                "other_deductions": Decimal("0.00"),
-            }
-        )
-        # Aruna Sundaram (HOD)
-        ss_hod, _ = SalaryStructure.objects.get_or_create(
-            faculty=faculty_hod,
-            defaults={
-                "college": apex_college,
-                "basic_salary": Decimal("100000.00"),
-                "hra": Decimal("25000.00"),
-                "da": Decimal("15000.00"),
-                "special_allowance": Decimal("10000.00"),
-                "pf_deduction": Decimal("6000.00"),
-                "tax_deduction": Decimal("14000.00"),
-                "other_deductions": Decimal("0.00"),
-            }
-        )
-
-        # Payslips for August 2026 (Paid) and September 2026 (Processed)
-        for s, fac in [(ss_priya, faculty_priya), (ss_anil, faculty_mentor), (ss_hod, faculty_hod)]:
-            # August (Paid)
-            Payslip.objects.get_or_create(
-                college=apex_college, faculty=fac, month=8, year=2026,
-                defaults={
-                    "payslip_number": f"PAY-202608-{fac.faculty_number}",
-                    "basic_salary": s.basic_salary,
-                    "allowances": s.hra + s.da + s.special_allowance,
-                    "gross_salary": s.gross_salary,
-                    "deductions": s.pf_deduction + s.other_deductions,
-                    "tax_deducted": s.tax_deduction,
-                    "net_salary": s.net_salary,
-                    "status": "PAID",
-                    "payment_date": date(2026, 8, 31),
-                    "payment_method": "DIRECT_DEPOSIT",
-                    "transaction_ref": f"CMS-SAL-202608-{fac.faculty_number}",
-                    "working_days": 31,
-                    "present_days": 31,
-                    "leave_days": 0,
-                }
-            )
-            # September (Processed)
-            Payslip.objects.get_or_create(
-                college=apex_college, faculty=fac, month=9, year=2026,
-                defaults={
-                    "payslip_number": f"PAY-202609-{fac.faculty_number}",
-                    "basic_salary": s.basic_salary,
-                    "allowances": s.hra + s.da + s.special_allowance,
-                    "gross_salary": s.gross_salary,
-                    "deductions": s.pf_deduction + s.other_deductions,
-                    "tax_deducted": s.tax_deduction,
-                    "net_salary": s.net_salary,
-                    "status": "PROCESSED",
-                    "working_days": 30,
-                    "present_days": 30,
-                    "leave_days": 0,
-                }
-            )
-
-        self.stdout.write(self.style.SUCCESS("Seeded Phase 5: Fee Categories, Fee Structures, Invoices, Payments, Receipts, and Faculty Payroll."))
+        self.stdout.write(self.style.SUCCESS("Seeded Phase 5: Fee Categories, Fee Structures, Invoices, Payments, and Receipts."))
 
         # ==========================================
         # Phase 6: Communication & Leave Management
@@ -998,226 +919,34 @@ class Command(BaseCommand):
             }
         )
 
-        # 3. Library Books Catalog
-        books_data = [
-            (
-                "Introduction to Algorithms (4th Edition)",
-                "978-0262046305",
-                "Thomas H. Cormen, Charles E. Leiserson, Ronald L. Rivest, Clifford Stein",
-                "MIT Press",
-                "4th Edition",
-                2022,
-                Book.Category.COMPUTER_SCIENCE,
-                "Rack CS-01, Shelf A",
-                10,
-                8,
-                "The comprehensive algorithms reference covering data structures, dynamic programming, graph algorithms, and multithreading.",
-            ),
-            (
-                "Artificial Intelligence: A Modern Approach (4th Edition)",
-                "978-0134610993",
-                "Stuart Russell, Peter Norvig",
-                "Pearson",
-                "4th Edition",
-                2020,
-                Book.Category.COMPUTER_SCIENCE,
-                "Rack CS-02, Shelf B",
-                8,
-                6,
-                "The authoritative guide to AI, intelligent agents, heuristic search, machine learning, and natural language processing.",
-            ),
-            (
-                "Database System Concepts (7th Edition)",
-                "978-0078022159",
-                "Abraham Silberschatz, Henry F. Korth, S. Sudarshan",
-                "McGraw-Hill",
-                "7th Edition",
-                2019,
-                Book.Category.COMPUTER_SCIENCE,
-                "Rack CS-03, Shelf A",
-                6,
-                5,
-                "Fundamentals of database systems, relational algebra, SQL, query optimization, and distributed databases.",
-            ),
-            (
-                "Operating System Concepts (10th Edition)",
-                "978-1119800361",
-                "Abraham Silberschatz, Peter B. Galvin, Greg Gagne",
-                "Wiley",
-                "10th Edition",
-                2021,
-                Book.Category.COMPUTER_SCIENCE,
-                "Rack CS-04, Shelf C",
-                7,
-                6,
-                "In-depth analysis of processes, memory management, scheduling, virtual memory, storage systems, and protection.",
-            ),
-            (
-                "Designing Data-Intensive Applications",
-                "978-1449373320",
-                "Martin Kleppmann",
-                "O'Reilly Media",
-                "1st Edition",
-                2017,
-                Book.Category.COMPUTER_SCIENCE,
-                "Rack CS-05, Shelf A",
-                6,
-                5,
-                "The definitive guide to reliability, scalability, maintainability, batch processing, and streaming architectures.",
-            ),
-            (
-                "Computer Networks: A Systems Approach",
-                "978-0123850591",
-                "Larry L. Peterson, Bruce S. Davie",
-                "Morgan Kaufmann",
-                "5th Edition",
-                2011,
-                Book.Category.COMPUTER_SCIENCE,
-                "Rack CS-06, Shelf B",
-                5,
-                4,
-                "End-to-end networking systems, routing algorithms, transport protocols TCP/UDP, and software-defined networking.",
-            ),
-            (
-                "Clean Architecture: A Craftsman's Guide to Software Structure",
-                "978-0134494166",
-                "Robert C. Martin",
-                "Prentice Hall",
-                "1st Edition",
-                2017,
-                Book.Category.COMPUTER_SCIENCE,
-                "Rack CS-07, Shelf A",
-                5,
-                4,
-                "Universal rules of software architecture, decoupling strategies, boundaries, and enterprise design patterns.",
-            ),
-            (
-                "Higher Engineering Mathematics (44th Edition)",
-                "978-8193328491",
-                "B.S. Grewal",
-                "Khanna Publishers",
-                "44th Edition",
-                2018,
-                Book.Category.MATHEMATICS,
-                "Rack MATH-01, Shelf A",
-                12,
-                10,
-                "Calculus, linear algebra, complex analysis, differential equations, Fourier transforms, and probability.",
-            ),
-            (
-                "Linear Algebra and Its Applications",
-                "978-0030105678",
-                "Gilbert Strang",
-                "Cengage",
-                "4th Edition",
-                2006,
-                Book.Category.MATHEMATICS,
-                "Rack MATH-02, Shelf B",
-                6,
-                5,
-                "Vector spaces, eigenvalues, singular value decomposition, matrix operations, and computational applications.",
-            ),
-            (
-                "Microelectronic Circuits (8th Edition)",
-                "978-0190853464",
-                "Adel S. Sedra, Kenneth C. Smith",
-                "Oxford University Press",
-                "8th Edition",
-                2020,
-                Book.Category.ELECTRONICS,
-                "Rack EC-01, Shelf A",
-                5,
-                5,
-                "Semiconductor physics, diode circuits, MOSFETs, BJTs, operational amplifiers, and VLSI design principles.",
-            ),
-        ]
-
-        created_books = {}
-        for title, isbn, author, pub, ed, yr, cat, shelf, tot, avail, desc in books_data:
-            book_obj, _ = Book.objects.get_or_create(
-                college=apex_college,
-                isbn=isbn,
-                defaults={
-                    "title": title,
-                    "author": author,
-                    "publisher": pub,
-                    "edition": ed,
-                    "publication_year": yr,
-                    "category": cat,
-                    "shelf_location": shelf,
-                    "total_copies": tot,
-                    "available_copies": avail,
-                    "description": desc,
-                }
-            )
-            created_books[isbn] = book_obj
-
-        # 4. Book Issues & Circulation
-        # Rahul: Borrowed CLRS Algorithms 5 days ago (Active, Due in 9 days)
-        BookIssue.objects.get_or_create(
+        # 3. Library Bookings (Section 8 spec: Faculty requests, LIBRARY_FACULTY approves/rejects)
+        LibraryBooking.objects.get_or_create(
             college=apex_college,
-            book=created_books["978-0262046305"],
-            user=student_rahul.user,
+            requested_by=faculty_ramesh,
+            date=date.today() + timedelta(days=2),
+            start_time="10:00:00",
+            end_time="12:00:00",
             defaults={
-                "student": student_rahul,
-                "issued_by": users["librarystaff.anita@apex.edu"],
-                "issue_date": date.today() - timedelta(days=5),
-                "due_date": date.today() + timedelta(days=9),
-                "status": BookIssue.IssueStatus.ISSUED,
-                "remarks": "Issued for CS301 coursework.",
+                "purpose": "Digital Library CS Research Session",
+                "status": LibraryBooking.Status.APPROVED,
+                "decided_by": users["librarystaff.anita@apex.edu"],
+                "decided_at": timezone.now(),
             }
         )
 
-        # Rahul: Borrowed Database Concepts 30 days ago, returned 5 days ago (Returned on time)
-        BookIssue.objects.get_or_create(
+        LibraryBooking.objects.get_or_create(
             college=apex_college,
-            book=created_books["978-0078022159"],
-            user=student_rahul.user,
+            requested_by=faculty_priya,
+            date=date.today() + timedelta(days=3),
+            start_time="14:00:00",
+            end_time="16:00:00",
             defaults={
-                "student": student_rahul,
-                "issued_by": users["librarystaff.anita@apex.edu"],
-                "issue_date": date.today() - timedelta(days=30),
-                "due_date": date.today() - timedelta(days=16),
-                "return_date": date.today() - timedelta(days=18),
-                "status": BookIssue.IssueStatus.RETURNED,
-                "fine_amount": Decimal("0.00"),
-                "fine_paid": True,
-                "remarks": "Returned in good condition.",
+                "purpose": "Algorithm Study Circle",
+                "status": LibraryBooking.Status.PENDING,
             }
         )
 
-        # Rohan Gupta: Borrowed Data-Intensive Applications 25 days ago (Overdue by 11 days, ₹55 fine)
-        BookIssue.objects.get_or_create(
-            college=apex_college,
-            book=created_books["978-1449373320"],
-            user=student_rohan.user,
-            defaults={
-                "student": student_rohan,
-                "issued_by": users["librarystaff.anita@apex.edu"],
-                "issue_date": date.today() - timedelta(days=25),
-                "due_date": date.today() - timedelta(days=11),
-                "status": BookIssue.IssueStatus.ISSUED,
-                "fine_amount": Decimal("55.00"),
-                "fine_paid": False,
-                "remarks": "Overdue return reminder sent via portal.",
-            }
-        )
-
-        # Ananya Sen: Borrowed Higher Engineering Mathematics 3 days ago
-        BookIssue.objects.get_or_create(
-            college=apex_college,
-            book=created_books["978-8193328491"],
-            user=student_ananya.user,
-            defaults={
-                "student": student_ananya,
-                "issued_by": users["librarystaff.anita@apex.edu"],
-                "issue_date": date.today() - timedelta(days=3),
-                "due_date": date.today() + timedelta(days=11),
-                "status": BookIssue.IssueStatus.ISSUED,
-            }
-        )
-
-        self.stdout.write(self.style.SUCCESS("Seeded Phase 7: Print Pricing, Print Queue Orders, Library Book Catalog, and Circulation Loans."))
+        self.stdout.write(self.style.SUCCESS("Seeded Phase 7: Print Pricing, Print Queue Orders, and Library Bookings."))
 
         # =========================================================================
         # PHASE 8: AI / COMPUTER VISION CAMERA INTELLIGENCE & SECURITY

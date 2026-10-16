@@ -1,18 +1,27 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { apiRequest } from "./api";
 
-export type UserRole =
+export type BaseRole =
   | "SUPER_ADMIN"
   | "PRINCIPAL"
   | "HOD"
-  | "MENTOR"
   | "FACULTY"
+  | "LAB_FACULTY"
   | "ACCOUNTANT"
-  | "STUDENT"
-  | "PARENT"
-  | "SECURITY"
+  | "LIBRARY_FACULTY"
   | "PRINT_STAFF"
-  | "LIBRARY_STAFF";
+  | "SECURITY"
+  | "STUDENT"
+  | "PARENT";
+
+export type AssignmentRole = "CLASS_INCHARGE" | "MENTOR";
+export type UserRole = BaseRole | AssignmentRole | string;
+
+export interface RoleItem {
+  role: string;
+  source: "base" | "assignment";
+  is_active: boolean;
+}
 
 export interface College {
   id: string;
@@ -35,7 +44,9 @@ export interface User {
   last_name: string;
   full_name: string;
   phone?: string;
-  role: UserRole;
+  role: string;
+  active_role?: string;
+  available_roles?: RoleItem[];
   status: string;
   college?: College | null;
   profile_photo_url?: string;
@@ -50,10 +61,37 @@ interface AuthContextType {
   logout: () => void;
   hasPermission: (permissionCode: string) => boolean;
   isRole: (roles: UserRole | UserRole[]) => boolean;
-  switchRole: (newRole: "FACULTY" | "MENTOR") => Promise<void>;
+  switchRole: (newRole: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function getRoleHome(role: string): string {
+  switch (role) {
+    case "LIBRARY_FACULTY":
+      return "/dashboard/library";
+    case "HOD":
+      return "/dashboard/analytics";
+    case "MENTOR":
+      return "/dashboard/mentorship";
+    case "CLASS_INCHARGE":
+    case "FACULTY":
+    case "LAB_FACULTY":
+      return "/dashboard/academics";
+    case "ACCOUNTANT":
+      return "/dashboard/finance";
+    case "PRINT_STAFF":
+      return "/dashboard/printshop";
+    case "SECURITY":
+      return "/dashboard/cameras";
+    case "PARENT":
+      return "/dashboard/parent";
+    case "STUDENT":
+      return "/dashboard/academics";
+    default:
+      return "/dashboard";
+  }
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -67,10 +105,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (storedUser && token) {
         const parsed = JSON.parse(storedUser);
-        if (parsed.email?.toLowerCase().includes("hod") && parsed.role !== "HOD") {
-          parsed.role = "HOD";
-          localStorage.setItem("campyteq_user", JSON.stringify(parsed));
-        }
         setUser(parsed);
       }
     } catch (err) {
@@ -85,7 +119,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("campyteq_refresh_token", tokens.refresh);
     localStorage.setItem("campyteq_user", JSON.stringify(tokens.user));
     setUser(tokens.user);
-    window.location.href = "/dashboard";
+    const home = getRoleHome(tokens.user.active_role || tokens.user.role);
+    window.location.href = home;
   };
 
   const logout = () => {
@@ -103,33 +138,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const hasPermission = (permissionCode: string) => {
     if (!user) return false;
-    if (user.role === "PRINCIPAL" || user.role === "SUPER_ADMIN") return true;
+    const actingRole = user.active_role || user.role;
+    if (actingRole === "PRINCIPAL" || actingRole === "SUPER_ADMIN") return true;
     return user.permissions?.includes(permissionCode) || false;
   };
 
   const isRole = (roles: UserRole | UserRole[]) => {
     if (!user) return false;
+    const current = user.active_role || user.role;
     if (Array.isArray(roles)) {
-      return roles.includes(user.role);
+      return roles.includes(current);
     }
-    return user.role === roles;
+    return current === roles;
   };
 
-  const switchRole = async (newRole: "FACULTY" | "MENTOR") => {
+  const switchRole = async (newRole: string) => {
     if (!user) return;
     try {
-      await apiRequest("/auth/switch-role/", {
+      const res = await apiRequest("/accounts/switch-role/", {
         method: "POST",
         body: JSON.stringify({ role: newRole }),
       });
-    } catch (err) {
-      console.warn("Backend switch-role sync note:", err);
-    }
-    const updatedUser: User = { ...user, role: newRole };
-    setUser(updatedUser);
-    localStorage.setItem("campyteq_user", JSON.stringify(updatedUser));
-    if (localStorage.getItem("campus360_user")) {
-      localStorage.setItem("campus360_user", JSON.stringify(updatedUser));
+      if (res.access) {
+        localStorage.setItem("campyteq_access_token", res.access);
+      }
+      if (res.refresh) {
+        localStorage.setItem("campyteq_refresh_token", res.refresh);
+      }
+      const updatedUser: User = {
+        ...user,
+        role: newRole,
+        active_role: newRole,
+        permissions: res.permissions || user.permissions,
+      };
+      setUser(updatedUser);
+      localStorage.setItem("campyteq_user", JSON.stringify(updatedUser));
+      const targetHome = getRoleHome(newRole);
+      window.location.href = targetHome;
+    } catch (err: any) {
+      console.error("switch-role failed:", err);
+      throw err;
     }
   };
 

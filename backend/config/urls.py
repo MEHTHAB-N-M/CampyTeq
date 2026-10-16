@@ -18,6 +18,7 @@ urlpatterns = [
 
     # API v1 Modules
     path('api/v1/auth/', include('accounts.urls_auth')),
+    path('api/v1/accounts/', include('accounts.urls_auth')),
     path('api/v1/users/', include('accounts.urls_users')),
     path('api/v1/colleges/', include('colleges.urls')),
     path('api/v1/departments/', include('departments.urls')),
@@ -28,7 +29,6 @@ urlpatterns = [
     path('api/v1/assignments/', include('assignments.urls')),
     path('api/v1/attendance/', include('attendance.urls')),
     path('api/v1/fees/', include('fees.urls')),
-    path('api/v1/payroll/', include('payroll.urls')),
     path('api/v1/communication/', include('communication.urls')),
     path('api/v1/leave/', include('leave.urls')),
     path('api/v1/printshop/', include('printshop.urls')),
@@ -37,6 +37,10 @@ urlpatterns = [
     path('api/v1/tracking/', include('tracking.urls')),
     path('api/v1/analytics/', include('analytics.urls')),
     path('api/v1/facilities/', include('facilities.urls')),
+    path('api/v1/hod/', include('attendance.urls_hod')),
+    path('api/v1/student/', include('attendance.urls_student')),
+    path('api/v1/parent/', include('students.urls_parent')),
+    path('api/v1/mentor/', include('students.urls_mentor')),
 ]
 
 if settings.DEBUG:

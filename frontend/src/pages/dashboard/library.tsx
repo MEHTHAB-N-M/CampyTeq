@@ -3,1222 +3,577 @@
 import React, { useState, useEffect } from "react";
 import {
   Library,
-  BookOpen,
-  Search,
-  Plus,
+  Calendar,
   Clock,
   CheckCircle2,
+  XCircle,
+  Plus,
   AlertCircle,
-  Calendar,
-  Bookmark,
-  User,
-  ShieldCheck,
-  RotateCcw,
-  IndianRupee,
+  Shield,
+  Search,
+  Filter,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/api";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
-interface Book {
+interface LibraryBookingItem {
   id: string;
-  title: string;
-  isbn: string;
-  author: string;
-  publisher: string;
-  edition: string;
-  publication_year?: number;
-  category: string;
-  shelf_location: string;
-  total_copies: number;
-  available_copies: number;
-  description: string;
-}
-
-interface BookIssue {
-  id: string;
-  book: string;
-  book_title: string;
-  book_isbn: string;
-  book_author: string;
-  user: string;
-  user_name: string;
-  user_email: string;
-  student_roll?: string;
-  issued_by_name?: string;
-  issue_date: string;
-  due_date: string;
-  return_date?: string;
-  status: "ISSUED" | "RETURNED" | "OVERDUE" | "LOST";
-  fine_amount: string;
-  fine_paid: boolean;
-  remarks: string;
-}
-
-interface LibraryRequest {
-  id: string;
-  book: string;
-  book_title: string;
-  book_isbn: string;
   requested_by_name: string;
-  requested_by_role: string;
-  request_type: string;
-  urgency: string;
-  justification: string;
-  status: "PENDING" | "APPROVED" | "REJECTED";
-  reviewed_by_name?: string;
-  review_remarks?: string;
+  requested_by_dept: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  purpose: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  decided_by_name?: string;
+  decided_at?: string;
+  reject_reason?: string;
   created_at: string;
+}
+
+interface AvailabilitySlot {
+  start_time: string;
+  end_time: string;
+  status: "FREE" | "PENDING" | "BOOKED";
 }
 
 export default function LibraryPage() {
   const { user } = useAuth();
-  const [books, setBooks] = useState<Book[]>([]);
-  const [issues, setIssues] = useState<BookIssue[]>([]);
-  const [requests, setRequests] = useState<LibraryRequest[]>([]);
+  const activeRole = user?.active_role || user?.role || "";
+
+  const [activeTab, setActiveTab] = useState<"PENDING" | "CALENDAR" | "MINE">("PENDING");
+  const [pendingBookings, setPendingBookings] = useState<LibraryBookingItem[]>([]);
+  const [myBookings, setMyBookings] = useState<LibraryBookingItem[]>([]);
+  const [availability, setAvailability] = useState<{ date: string; slots: AvailabilitySlot[] } | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"CATALOG" | "MY_LOANS" | "CIRCULATION" | "MENTOR_REQUESTS">("CATALOG");
-  const [categoryFilter, setCategoryFilter] = useState("ALL");
-  const [searchQuery, setSearchQuery] = useState("");
 
-  // Modals
-  const [showAddBookModal, setShowAddBookModal] = useState(false);
-  const [showIssueModal, setShowIssueModal] = useState(false);
-  const [showRequestModal, setShowRequestModal] = useState(false);
-  const [reviewReqModal, setReviewReqModal] = useState<{ req: LibraryRequest | null; action: "APPROVED" | "REJECTED" }>({ req: null, action: "APPROVED" });
-  const [reviewRemarks, setReviewRemarks] = useState("");
-  const [returnModal, setReturnModal] = useState<{ issue: BookIssue | null }>({ issue: null });
-  const [finePaid, setFinePaid] = useState(true);
-  const [returnRemarks, setReturnRemarks] = useState("");
+  // Modals & Action States
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [rejectingBooking, setRejectingBooking] = useState<LibraryBookingItem | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [notification, setNotification] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // New Book Form
-  const [bookForm, setBookForm] = useState({
-    title: "",
-    isbn: "",
-    author: "",
-    publisher: "",
-    edition: "1st Edition",
-    category: "COMPUTER_SCIENCE",
-    shelf_location: "Rack CS-01",
-    total_copies: 5,
-    available_copies: 5,
-    description: "",
+  // New Booking Form
+  const [formData, setFormData] = useState({
+    date: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+    start_time: "10:00:00",
+    end_time: "12:00:00",
+    purpose: "",
   });
 
-  // Issue Book Form
-  const [issueForm, setIssueForm] = useState({
-    book: "",
-    user: "",
-    remarks: "Issued for semester coursework",
-  });
+  const isLibraryFaculty = activeRole === "LIBRARY_FACULTY";
+  const canRequest = ["FACULTY", "LAB_FACULTY", "HOD", "CLASS_INCHARGE", "MENTOR"].includes(activeRole);
+  const isStudentOrParent = ["STUDENT", "PARENT"].includes(activeRole);
 
-  // Mentor Request Form
-  const [requestForm, setRequestForm] = useState({
-    book: "",
-    book_title: "",
-    request_type: "RESERVATION",
-    urgency: "MEDIUM",
-    justification: "",
-  });
-  const [submitting, setSubmitting] = useState(false);
+  useEffect(() => {
+    if (isStudentOrParent) return;
+    loadData();
+  }, [activeRole, selectedDate]);
 
-  const isLibraryStaff = ["LIBRARY_STAFF", "PRINCIPAL"].includes(user?.role || "");
-  const isMentor = ["MENTOR", "PRINCIPAL"].includes(user?.role || "");
-
-  const fetchData = async () => {
+  const loadData = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const [booksRes, issuesRes, reqsRes] = await Promise.all([
-        apiRequest<any>("/library/books/"),
-        apiRequest<any>("/library/issues/"),
-        apiRequest<any>("/library/requests/").catch(() => []),
-      ]);
-      setBooks(booksRes?.results || (Array.isArray(booksRes) ? booksRes : []));
-      setIssues(issuesRes?.results || (Array.isArray(issuesRes) ? issuesRes : []));
-      setRequests(reqsRes?.results || (Array.isArray(reqsRes) ? reqsRes : []));
-    } catch (err) {
-      console.error("Failed to load library data", err);
+      if (isLibraryFaculty) {
+        const res = await apiRequest<LibraryBookingItem[]>("/library/bookings/pending/");
+        setPendingBookings(Array.isArray(res) ? res : (res as any)?.results || []);
+      }
+      if (canRequest) {
+        const myRes = await apiRequest<LibraryBookingItem[]>("/library/bookings/mine/");
+        setMyBookings(Array.isArray(myRes) ? myRes : (myRes as any)?.results || []);
+      }
+      // Load availability
+      const availRes = await apiRequest<any>(`/library/bookings/availability/?date=${selectedDate}`);
+      setAvailability(availRes);
+    } catch (err: any) {
+      console.error("Failed to load library bookings:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const handleAddBook = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleApprove = async (bookingId: string) => {
+    setActionLoading(true);
     try {
-      setSubmitting(true);
-      await apiRequest("/library/books/", {
-        method: "POST",
-        body: JSON.stringify(bookForm),
-      });
-      setShowAddBookModal(false);
-      setBookForm({
-        title: "",
-        isbn: "",
-        author: "",
-        publisher: "",
-        edition: "1st Edition",
-        category: "COMPUTER_SCIENCE",
-        shelf_location: "Rack CS-01",
-        total_copies: 5,
-        available_copies: 5,
-        description: "",
-      });
-      fetchData();
-    } catch (err) {
-      console.error("Failed to add book", err);
-      alert("Failed to add book to catalog.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleIssueBook = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setSubmitting(true);
-      await apiRequest("/library/issues/", {
-        method: "POST",
-        body: JSON.stringify(issueForm),
-      });
-      setShowIssueModal(false);
-      setIssueForm({ book: "", user: "", remarks: "Issued for semester coursework" });
-      fetchData();
+      await apiRequest(`/library/bookings/${bookingId}/approve/`, { method: "POST" });
+      setNotification({ type: "success", text: "Library booking approved successfully." });
+      loadData();
     } catch (err: any) {
-      console.error("Failed to issue book", err);
-      alert(err.message || "Failed to issue book.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleReturnBook = async () => {
-    if (!returnModal.issue) return;
-    try {
-      setActionLoading(true);
-      await apiRequest(`/library/issues/${returnModal.issue.id}/mark_return/`, {
-        method: "POST",
-        body: JSON.stringify({ fine_paid: finePaid, remarks: returnRemarks }),
-      });
-      setReturnModal({ issue: null });
-      setReturnRemarks("");
-      fetchData();
-    } catch (err) {
-      console.error("Failed to return book", err);
-      alert("Failed to process book return.");
+      setNotification({ type: "error", text: err.message || "Failed to approve booking." });
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleCreateRequest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setSubmitting(true);
-      await apiRequest("/library/requests/", {
-        method: "POST",
-        body: JSON.stringify(requestForm),
-      });
-      setShowRequestModal(false);
-      setRequestForm({
-        book: "",
-        book_title: "",
-        request_type: "RESERVATION",
-        urgency: "MEDIUM",
-        justification: "",
-      });
-      fetchData();
-    } catch (err: any) {
-      console.error("Failed to submit library request", err);
-      alert(err.message || "Failed to submit request.");
-    } finally {
-      setSubmitting(false);
+  const handleReject = async () => {
+    if (!rejectingBooking) return;
+    if (!rejectReason.trim()) {
+      alert("A rejection reason is strictly required.");
+      return;
     }
-  };
-
-  const handleReviewRequest = async () => {
-    if (!reviewReqModal.req) return;
+    setActionLoading(true);
     try {
-      setActionLoading(true);
-      await apiRequest(`/library/requests/${reviewReqModal.req.id}/review/`, {
+      await apiRequest(`/library/bookings/${rejectingBooking.id}/reject/`, {
         method: "POST",
-        body: JSON.stringify({
-          status: reviewReqModal.action,
-          review_remarks: reviewRemarks,
-        }),
+        body: JSON.stringify({ reject_reason: rejectReason }),
       });
-      setReviewReqModal({ req: null, action: "APPROVED" });
-      setReviewRemarks("");
-      fetchData();
+      setNotification({ type: "success", text: "Library booking rejected." });
+      setRejectingBooking(null);
+      setRejectReason("");
+      loadData();
     } catch (err: any) {
-      console.error("Failed to review library request", err);
-      alert(err.message || "Failed to submit review.");
+      setNotification({ type: "error", text: err.message || "Failed to reject booking." });
     } finally {
       setActionLoading(false);
     }
   };
 
-  const filteredBooks = books.filter((b) => {
-    const matchesCategory = categoryFilter === "ALL" || b.category === categoryFilter;
-    const matchesSearch =
-      b.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.author.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.isbn.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.shelf_location.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
-
-  const myLoans = issues.filter(
-    (i) => (i.user === user?.id || i.user_email === user?.email) && i.status === "ISSUED"
-  );
-  const activeCirculation = issues.filter((i) => i.status === "ISSUED");
-
-  const categoryLabels: Record<string, string> = {
-    COMPUTER_SCIENCE: "Computer Science & AI",
-    ELECTRONICS: "Electronics & VLSI",
-    MECHANICAL: "Mechanical",
-    MATHEMATICS: "Mathematics",
-    PHYSICS: "Physics",
-    MANAGEMENT: "Management",
-    HUMANITIES: "Humanities",
-    GENERAL: "General Reference",
+  const handleCreateBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionLoading(true);
+    try {
+      await apiRequest("/library/bookings/", {
+        method: "POST",
+        body: JSON.stringify(formData),
+      });
+      setNotification({ type: "success", text: "Library booking request submitted successfully." });
+      setShowBookingModal(false);
+      setFormData({
+        date: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+        start_time: "10:00:00",
+        end_time: "12:00:00",
+        purpose: "",
+      });
+      loadData();
+    } catch (err: any) {
+      setNotification({ type: "error", text: err.message || "Failed to submit booking request." });
+    } finally {
+      setActionLoading(false);
+    }
   };
+
+  const handleCancelBooking = async (bookingId: string) => {
+    if (!confirm("Are you sure you want to cancel this booking?")) return;
+    setActionLoading(true);
+    try {
+      await apiRequest(`/library/bookings/${bookingId}/cancel/`, { method: "POST" });
+      setNotification({ type: "success", text: "Booking cancelled." });
+      loadData();
+    } catch (err: any) {
+      setNotification({ type: "error", text: err.message || "Failed to cancel booking." });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  if (isStudentOrParent) {
+    return (
+      <div className="p-8 max-w-lg mx-auto text-center space-y-4">
+        <Shield className="h-12 w-12 text-rose-400 mx-auto" />
+        <h2 className="text-xl font-bold text-foreground">Access Restricted</h2>
+        <p className="text-sm text-muted-foreground">
+          Students and parents do not have access to institutional library space reservation portals.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-12">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2.5">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
             <Library className="h-6 w-6 text-indigo-400" />
-            University Library & Books Catalog
+            Library Space Booking Portal
           </h1>
           <p className="text-xs text-muted-foreground mt-1">
-            Search physical books, inspect real-time shelf availability, manage loans, and submit mentor acquisition requests.
+            Institutional reservations for digital library, conference, and study suites (Section 8 Spec).
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start md:self-auto">
-          {isMentor && (
-            <button
-              onClick={() => {
-                setRequestForm({
-                  book: books[0]?.id || "",
-                  book_title: books[0]?.title || "",
-                  request_type: "RESERVATION",
-                  urgency: "MEDIUM",
-                  justification: "",
-                });
-                setShowRequestModal(true);
-              }}
-              className="px-3.5 py-2 bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold rounded-lg shadow-md shadow-teal-600/20 flex items-center gap-1.5 transition-colors"
-            >
-              <Plus className="h-4 w-4" /> Mentor Request
-            </button>
-          )}
-          {isLibraryStaff && (
-            <>
-              <button
-                onClick={() => setShowAddBookModal(true)}
-                className="px-3 py-2 bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold rounded-lg border border-border/80 flex items-center gap-1.5 transition-colors"
-              >
-                <Plus className="h-4 w-4" /> Add Book
-              </button>
-              <button
-                onClick={() => setShowIssueModal(true)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-md shadow-indigo-600/20 flex items-center gap-1.5 transition-colors"
-              >
-                <Bookmark className="h-4 w-4" /> Issue Book
-              </button>
-            </>
-          )}
-        </div>
+        {canRequest && (
+          <Button
+            onClick={() => setShowBookingModal(true)}
+            variant="gradient"
+            className="flex items-center gap-1.5 text-xs font-semibold"
+          >
+            <Plus className="h-4 w-4" /> Request Library Slot
+          </Button>
+        )}
       </div>
 
-      {/* Metric Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="p-4 rounded-xl border border-border/60 bg-card/60 flex items-center gap-3">
-          <div className="p-2.5 rounded-lg bg-indigo-500/10 text-indigo-400">
-            <BookOpen className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="text-[11px] text-muted-foreground">Catalog Titles</p>
-            <p className="text-xl font-bold text-foreground">{books.length}</p>
-          </div>
+      {notification && (
+        <div
+          className={`p-3 rounded-lg text-xs font-medium flex items-center justify-between ${
+            notification.type === "success"
+              ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300"
+              : "bg-rose-500/10 border border-rose-500/30 text-rose-300"
+          }`}
+        >
+          <span>{notification.text}</span>
+          <button onClick={() => setNotification(null)} className="text-xs opacity-70 hover:opacity-100">
+            ✕
+          </button>
         </div>
-
-        <div className="p-4 rounded-xl border border-border/60 bg-card/60 flex items-center gap-3">
-          <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400">
-            <CheckCircle2 className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="text-[11px] text-muted-foreground">Available On Shelf</p>
-            <p className="text-xl font-bold text-emerald-400">
-              {books.reduce((acc, b) => acc + b.available_copies, 0)}
-            </p>
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl border border-border/60 bg-card/60 flex items-center gap-3">
-          <div className="p-2.5 rounded-lg bg-blue-500/10 text-blue-400">
-            <Clock className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="text-[11px] text-muted-foreground">Active Borrowed Loans</p>
-            <p className="text-xl font-bold text-blue-400">{activeCirculation.length}</p>
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl border border-border/60 bg-card/60 flex items-center gap-3">
-          <div className="p-2.5 rounded-lg bg-rose-500/10 text-rose-400">
-            <AlertCircle className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="text-[11px] text-muted-foreground">Overdue Books</p>
-            <p className="text-xl font-bold text-rose-400">
-              {
-                issues.filter(
-                  (i) => i.status === "ISSUED" && new Date(i.due_date) < new Date()
-                ).length
-              }
-            </p>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-border/60 pb-2">
-        <button
-          onClick={() => setActiveTab("CATALOG")}
-          className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-            activeTab === "CATALOG"
-              ? "bg-indigo-600 text-white shadow-sm"
-              : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
-          }`}
-        >
-          Browse Books Catalog ({books.length})
-        </button>
-
-        <button
-          onClick={() => setActiveTab("MY_LOANS")}
-          className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
-            activeTab === "MY_LOANS"
-              ? "bg-indigo-600 text-white shadow-sm"
-              : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
-          }`}
-        >
-          My Borrowed Books
-          {myLoans.length > 0 && (
-            <span className="h-4 px-1.5 rounded-full bg-indigo-500 text-white text-[10px] font-bold">
-              {myLoans.length}
-            </span>
-          )}
-        </button>
-
-        {isLibraryStaff && (
+      <div className="flex border-b border-border/60 gap-6 text-xs">
+        {isLibraryFaculty && (
           <button
-            onClick={() => setActiveTab("CIRCULATION")}
-            className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
-              activeTab === "CIRCULATION"
-                ? "bg-indigo-600 text-white shadow-sm"
-                : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+            onClick={() => setActiveTab("PENDING")}
+            className={`pb-2.5 font-semibold transition-colors flex items-center gap-1.5 border-b-2 ${
+              activeTab === "PENDING"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            Circulation Management
-            <span className="h-4 px-1.5 rounded-full bg-secondary text-muted-foreground text-[10px] font-bold">
-              {issues.length}
-            </span>
+            <AlertCircle className="h-3.5 w-3.5 text-amber-400" />
+            Pending Decisions ({pendingBookings.length})
           </button>
         )}
 
-        {(isMentor || isLibraryStaff) && (
+        <button
+          onClick={() => setActiveTab("CALENDAR")}
+          className={`pb-2.5 font-semibold transition-colors flex items-center gap-1.5 border-b-2 ${
+            activeTab === "CALENDAR"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Calendar className="h-3.5 w-3.5 text-indigo-400" />
+          Availability Calendar
+        </button>
+
+        {canRequest && (
           <button
-            onClick={() => setActiveTab("MENTOR_REQUESTS")}
-            className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
-              activeTab === "MENTOR_REQUESTS"
-                ? "bg-indigo-600 text-white shadow-sm"
-                : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+            onClick={() => setActiveTab("MINE")}
+            className={`pb-2.5 font-semibold transition-colors flex items-center gap-1.5 border-b-2 ${
+              activeTab === "MINE"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            Mentor Requests
-            {requests.length > 0 && (
-              <span className="h-4 px-1.5 rounded-full bg-teal-500 text-white text-[10px] font-bold">
-                {requests.length}
-              </span>
-            )}
+            <Clock className="h-3.5 w-3.5 text-emerald-400" />
+            My Bookings ({myBookings.length})
           </button>
         )}
       </div>
 
-      {/* Content */}
-      {loading ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">Loading library data...</div>
-      ) : activeTab === "CATALOG" ? (
-        /* Catalog View */
-        <div className="space-y-4">
-          {/* Filters & Search */}
-          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-card/60 p-3 rounded-xl border border-border/60">
-            <div className="flex flex-wrap gap-1.5 w-full sm:w-auto">
-              {["ALL", "COMPUTER_SCIENCE", "MATHEMATICS", "ELECTRONICS"].map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setCategoryFilter(cat)}
-                  className={`px-3 py-1 text-xs rounded-lg font-medium transition-all ${
-                    categoryFilter === cat
-                      ? "bg-indigo-600 text-white shadow-sm"
-                      : "bg-secondary/40 text-muted-foreground hover:text-foreground hover:bg-secondary/80"
-                  }`}
-                >
-                  {cat === "ALL" ? "All Subjects" : categoryLabels[cat] || cat}
-                </button>
-              ))}
-            </div>
+      {/* TAB 1: PENDING DECISIONS (LIBRARY_FACULTY) */}
+      {activeTab === "PENDING" && isLibraryFaculty && (
+        <Card className="bg-card/50 border-border/60">
+          <CardHeader className="pb-3 border-b border-border/40">
+            <CardTitle className="text-sm font-semibold text-foreground">
+              Awaiting Library Faculty Decisions
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            {pendingBookings.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-6 text-center">
+                No pending library booking requests at this time.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {pendingBookings.map((b) => (
+                  <div
+                    key={b.id}
+                    className="p-3.5 rounded-xl bg-secondary/30 border border-border/50 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-xs text-foreground">{b.requested_by_name}</span>
+                        <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                          {b.requested_by_dept}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Date: <span className="text-foreground font-mono">{b.date}</span> • Slot:{" "}
+                        <span className="text-foreground font-mono">
+                          {b.start_time.slice(0, 5)} - {b.end_time.slice(0, 5)}
+                        </span>
+                      </p>
+                      <p className="text-xs text-indigo-300 font-medium italic">Purpose: {b.purpose}</p>
+                    </div>
 
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <div className="flex items-center gap-2 self-end md:self-center">
+                      <Button
+                        size="sm"
+                        variant="default"
+                        disabled={actionLoading}
+                        onClick={() => handleApprove(b.id)}
+                        className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={actionLoading}
+                        onClick={() => setRejectingBooking(b)}
+                        className="h-8 text-xs border-rose-500/40 text-rose-300 hover:bg-rose-500/10"
+                      >
+                        <XCircle className="h-3.5 w-3.5 mr-1" /> Reject...
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* TAB 2: AVAILABILITY CALENDAR */}
+      {activeTab === "CALENDAR" && (
+        <Card className="bg-card/50 border-border/60">
+          <CardHeader className="pb-3 border-b border-border/40 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm font-semibold text-foreground">
+              Slot Availability (Anonymous View)
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <label htmlFor="avail-date-input" className="text-xs text-muted-foreground">Date:</label>
               <input
-                type="text"
-                placeholder="Search by title, author, ISBN, shelf..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-secondary/50 border border-border/60 rounded-lg pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                id="avail-date-input"
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-secondary/60 border border-border/60 rounded px-2.5 py-1 text-xs text-foreground focus:outline-none"
               />
             </div>
-          </div>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <p className="text-xs text-muted-foreground mb-4">
+              *Per institutional policy (Section 8), requester identities and purposes are protected and hidden from peer view.
+            </p>
 
-          {filteredBooks.length === 0 ? (
-            <div className="py-16 text-center bg-card/40 rounded-xl border border-border/60">
-              <BookOpen className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-60" />
-              <p className="text-sm font-semibold text-foreground">No books found</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Try searching another title, author, or category.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredBooks.map((book) => {
-                const inStock = book.available_copies > 0;
-                return (
+            {availability?.slots && availability.slots.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                {availability.slots.map((s, idx) => (
                   <div
-                    key={book.id}
-                    className="p-5 rounded-xl border border-border/60 bg-card/60 hover:bg-card/90 transition-all flex flex-col justify-between shadow-sm"
-                  >
-                    <div>
-                      <div className="flex items-start justify-between gap-2 mb-2.5">
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] bg-indigo-500/10 text-indigo-400 border-indigo-500/30"
-                        >
-                          {categoryLabels[book.category] || book.category}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className={`text-[10px] font-semibold ${
-                            inStock
-                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                              : "bg-rose-500/10 text-rose-400 border-rose-500/30"
-                          }`}
-                        >
-                          {inStock ? `● Free (${book.available_copies}/${book.total_copies} available)` : "● Not Free (0 available)"}
-                        </Badge>
-                      </div>
-
-                      <h3 className="font-bold text-sm text-foreground hover:text-indigo-400 transition-colors leading-snug">
-                        {book.title}
-                      </h3>
-                      <p className="text-xs text-muted-foreground mt-1">By {book.author}</p>
-
-                      <div className="mt-3 space-y-1 text-[11px] text-muted-foreground font-mono bg-secondary/30 p-2.5 rounded-lg border border-border/40">
-                        <div>
-                          <span className="text-muted-foreground/70">ISBN:</span>{" "}
-                          <span className="text-foreground">{book.isbn}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground/70">Location:</span>{" "}
-                          <span className="text-indigo-400">{book.shelf_location}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground/70">Edition:</span>{" "}
-                          <span>
-                            {book.edition} ({book.publication_year || "N/A"})
-                          </span>
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-muted-foreground mt-3 leading-relaxed line-clamp-2">
-                        {book.description}
-                      </p>
-                    </div>
-
-                    <div className="mt-4 pt-3 border-t border-border/40 flex items-center justify-between text-[11px] gap-2">
-                      <span className="text-muted-foreground">
-                        Shelf: <strong className="text-indigo-300">{book.shelf_location}</strong>
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        {isMentor && (
-                          <button
-                            onClick={() => {
-                              setRequestForm({
-                                book: book.id,
-                                book_title: book.title,
-                                request_type: "RESERVATION",
-                                urgency: "MEDIUM",
-                                justification: "",
-                              });
-                              setShowRequestModal(true);
-                            }}
-                            className="px-2.5 py-1 bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 border border-teal-500/40 rounded-lg text-xs font-semibold transition-colors"
-                          >
-                            Request Copy
-                          </button>
-                        )}
-                        {isLibraryStaff && inStock && (
-                          <button
-                            onClick={() => {
-                              setIssueForm({ ...issueForm, book: book.id });
-                              setShowIssueModal(true);
-                            }}
-                            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-colors"
-                          >
-                            Issue Copy
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ) : activeTab === "MY_LOANS" ? (
-        /* My Loans View */
-        <div className="space-y-4">
-          {myLoans.length === 0 ? (
-            <div className="py-16 text-center bg-card/40 rounded-xl border border-border/60">
-              <Bookmark className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-60" />
-              <p className="text-sm font-semibold text-foreground">No active book loans</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                You do not have any borrowed books out from the library.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {myLoans.map((loan) => {
-                const isOverdue = new Date(loan.due_date) < new Date();
-                return (
-                  <div
-                    key={loan.id}
-                    className={`p-5 rounded-xl border bg-card/60 flex flex-col justify-between ${
-                      isOverdue ? "border-rose-500/40 bg-rose-500/5" : "border-border/60"
+                    key={idx}
+                    className={`p-3 rounded-lg border text-xs font-mono text-center flex flex-col justify-between ${
+                      s.status === "BOOKED"
+                        ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                        : s.status === "PENDING"
+                        ? "bg-amber-500/10 border-amber-500/30 text-amber-300"
+                        : "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
                     }`}
                   >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <Badge
-                          variant="outline"
-                          className={
-                            isOverdue
-                              ? "bg-rose-500/10 text-rose-400 border-rose-500/30 font-bold"
-                              : "bg-blue-500/10 text-blue-400 border-blue-500/30"
-                          }
-                        >
-                          {isOverdue ? "OVERDUE" : "BORROWED"}
-                        </Badge>
-                        <span className="font-mono text-[11px] text-muted-foreground">
-                          Due: {loan.due_date}
-                        </span>
-                      </div>
-
-                      <h3 className="font-bold text-sm text-foreground mb-1">{loan.book_title}</h3>
-                      <p className="text-xs text-muted-foreground mb-3">By {loan.book_author}</p>
-
-                      <div className="bg-secondary/30 p-3 rounded-lg border border-border/40 space-y-1 text-xs">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Borrow Date:</span>
-                          <span className="font-mono">{loan.issue_date}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Issued By:</span>
-                          <span>{loan.issued_by_name || "Library Circulation Desk"}</span>
-                        </div>
-                        {isOverdue && (
-                          <div className="flex justify-between text-rose-400 font-bold pt-1 border-t border-border/20">
-                            <span>Overdue Fine:</span>
-                            <span>₹{loan.fine_amount || "5.00/day"}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 pt-3 border-t border-border/40 text-[11px] text-muted-foreground flex items-center justify-between">
-                      <span>Standard Loan: 14 Days</span>
-                      <span className="text-indigo-400">Return at Main Circulation Desk</span>
-                    </div>
+                    <span className="font-bold">
+                      {s.start_time.slice(0, 5)} - {s.end_time.slice(0, 5)}
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className={`mt-2 mx-auto text-[10px] ${
+                        s.status === "BOOKED"
+                          ? "border-rose-500/40 text-rose-400"
+                          : s.status === "PENDING"
+                          ? "border-amber-500/40 text-amber-400"
+                          : "border-emerald-500/40 text-emerald-400"
+                      }`}
+                    >
+                      {s.status}
+                    </Badge>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ) : activeTab === "CIRCULATION" ? (
-        /* Circulation Management (Staff View) */
-        <div className="bg-card/60 rounded-xl border border-border/60 overflow-hidden">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-secondary/40 border-b border-border/60 text-muted-foreground">
-              <tr>
-                <th className="p-3.5 font-semibold">Book Title</th>
-                <th className="p-3.5 font-semibold">Borrower</th>
-                <th className="p-3.5 font-semibold">Issue Date</th>
-                <th className="p-3.5 font-semibold">Due Date</th>
-                <th className="p-3.5 font-semibold">Status</th>
-                <th className="p-3.5 font-semibold">Fine</th>
-                <th className="p-3.5 font-semibold text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/40">
-              {issues.map((issue) => {
-                const isOverdue = issue.status === "ISSUED" && new Date(issue.due_date) < new Date();
-                return (
-                  <tr key={issue.id} className="hover:bg-secondary/20 transition-colors">
-                    <td className="p-3.5 font-semibold text-foreground">
-                      <p>{issue.book_title}</p>
-                      <span className="text-[10px] text-muted-foreground font-mono">
-                        {issue.book_isbn}
-                      </span>
-                    </td>
-                    <td className="p-3.5">
-                      <p className="font-semibold text-foreground">{issue.user_name}</p>
-                      <span className="text-[10px] text-muted-foreground">{issue.user_email}</span>
-                    </td>
-                    <td className="p-3.5 text-muted-foreground font-mono">{issue.issue_date}</td>
-                    <td className="p-3.5 text-muted-foreground font-mono">
-                      <span className={isOverdue ? "text-rose-400 font-bold" : ""}>
-                        {issue.due_date}
-                      </span>
-                    </td>
-                    <td className="p-3.5">
-                      <Badge
-                        variant="outline"
-                        className={
-                          issue.status === "RETURNED"
-                            ? "bg-slate-500/10 text-slate-300 border-slate-500/30"
-                            : isOverdue
-                            ? "bg-rose-500/10 text-rose-400 border-rose-500/30 font-bold"
-                            : "bg-blue-500/10 text-blue-400 border-blue-500/30"
-                        }
-                      >
-                        {isOverdue ? "OVERDUE" : issue.status}
-                      </Badge>
-                    </td>
-                    <td className="p-3.5 font-bold">
-                      {parseFloat(issue.fine_amount) > 0 ? (
-                        <span className={issue.fine_paid ? "text-muted-foreground" : "text-rose-400"}>
-                          ₹{issue.fine_amount} {issue.fine_paid ? "(Paid)" : "(Unpaid)"}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </td>
-                    <td className="p-3.5 text-right">
-                      {issue.status === "ISSUED" ? (
-                        <button
-                          onClick={() => setReturnModal({ issue })}
-                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition-colors inline-flex items-center gap-1"
-                        >
-                          <RotateCcw className="h-3 w-3" /> Process Return
-                        </button>
-                      ) : (
-                        <span className="text-muted-foreground text-[11px] italic">Completed</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        /* Mentor Requests View */
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card/60 p-4 rounded-xl border border-border/60">
-            <div>
-              <h3 className="font-bold text-sm text-foreground">Mentor Book Acquisition & Reservation Requests</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {isLibraryStaff
-                  ? "Incoming requests from Academic Mentors for student cohort reference materials."
-                  : "Track the fulfillment and approval of your library material requests."}
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground text-center py-6">
+                All daily slots available for booking on {selectedDate}.
               </p>
-            </div>
-            {isMentor && (
-              <button
-                onClick={() => {
-                  setRequestForm({
-                    book: books[0]?.id || "",
-                    book_title: books[0]?.title || "",
-                    request_type: "RESERVATION",
-                    urgency: "MEDIUM",
-                    justification: "",
-                  });
-                  setShowRequestModal(true);
-                }}
-                className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-500 text-white rounded-lg text-xs font-semibold shadow-sm flex items-center gap-1.5 self-start sm:self-auto"
-              >
-                <Plus className="h-3.5 w-3.5" /> New Request
-              </button>
             )}
-          </div>
+          </CardContent>
+        </Card>
+      )}
 
-          {requests.length === 0 ? (
-            <div className="py-16 text-center bg-card/40 rounded-xl border border-border/60">
-              <Bookmark className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-60" />
-              <p className="text-sm font-semibold text-foreground">No mentor requests recorded</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Mentors can submit book reservations or new acquisition proposals at any time.
+      {/* TAB 3: MY BOOKINGS */}
+      {activeTab === "MINE" && canRequest && (
+        <Card className="bg-card/50 border-border/60">
+          <CardHeader className="pb-3 border-b border-border/40">
+            <CardTitle className="text-sm font-semibold text-foreground">My Library Requests</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            {myBookings.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-6">
+                You have not placed any library booking requests yet.
               </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {requests.map((req) => (
-                <div
-                  key={req.id}
-                  className="p-4 rounded-xl glass-panel border border-border/60 hover:border-indigo-500/30 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                >
-                  <div className="space-y-1.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-bold text-sm text-foreground">{req.book_title}</span>
-                      <Badge variant="outline" className="text-[10px] border-indigo-500/30 text-indigo-300 font-mono">
-                        {req.book_isbn}
-                      </Badge>
-                      <Badge variant="secondary" className="text-[10px]">
-                        {req.request_type}
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] font-semibold ${
-                          req.urgency === "HIGH"
-                            ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
-                            : req.urgency === "MEDIUM"
-                            ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
-                            : "bg-blue-500/10 text-blue-400 border-blue-500/30"
-                        }`}
-                      >
-                        {req.urgency} Urgency
-                      </Badge>
-                      <span
-                        className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                          req.status === "APPROVED"
-                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
-                            : req.status === "REJECTED"
-                            ? "bg-rose-500/10 text-rose-400 border border-rose-500/30"
-                            : "bg-amber-500/10 text-amber-400 border border-amber-500/30"
-                        }`}
-                      >
-                        {req.status}
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-muted-foreground">{req.justification}</p>
-
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground pt-1">
-                      <span>
-                        Requested by: <strong className="text-slate-200">{req.requested_by_name}</strong> ({req.requested_by_role})
-                      </span>
-                      <span>Date: {new Date(req.created_at).toLocaleDateString()}</span>
-                      {req.reviewed_by_name && (
-                        <span>
-                          Reviewed by: <strong className="text-slate-200">{req.reviewed_by_name}</strong>
-                          {req.review_remarks ? ` — "${req.review_remarks}"` : ""}
-                        </span>
+            ) : (
+              <div className="space-y-3">
+                {myBookings.map((b) => (
+                  <div
+                    key={b.id}
+                    className="p-3 rounded-xl bg-secondary/30 border border-border/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-foreground">{b.purpose}</span>
+                        <Badge
+                          variant={
+                            b.status === "APPROVED"
+                              ? "success"
+                              : b.status === "REJECTED"
+                              ? "destructive"
+                              : b.status === "CANCELLED"
+                              ? "outline"
+                              : "warning"
+                          }
+                          className="text-[10px]"
+                        >
+                          {b.status}
+                        </Badge>
+                      </div>
+                      <p className="text-muted-foreground">
+                        {b.date} • {b.start_time.slice(0, 5)} - {b.end_time.slice(0, 5)}
+                      </p>
+                      {b.reject_reason && (
+                        <p className="text-rose-400 text-[11px]">Reason: {b.reject_reason}</p>
                       )}
                     </div>
+
+                    {b.status === "PENDING" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleCancelBooking(b.id)}
+                        className="text-xs border-border/60 text-muted-foreground hover:text-foreground self-end sm:self-center"
+                      >
+                        Cancel
+                      </Button>
+                    )}
                   </div>
-
-                  {isLibraryStaff && req.status === "PENDING" && (
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        onClick={() => {
-                          setReviewReqModal({ req, action: "APPROVED" });
-                          setReviewRemarks("");
-                        }}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-sm flex items-center gap-1"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Approve
-                      </button>
-                      <button
-                        onClick={() => {
-                          setReviewReqModal({ req, action: "REJECTED" });
-                          setReviewRemarks("");
-                        }}
-                        className="px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 rounded-lg text-xs font-semibold shadow-sm flex items-center gap-1"
-                      >
-                        <AlertCircle className="h-3.5 w-3.5" /> Reject
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
-      {/* Add Book Modal */}
-      {showAddBookModal && (
+      {/* REQUEST BOOKING MODAL */}
+      {showBookingModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border border-border/80 rounded-2xl w-full max-w-lg p-6 shadow-2xl animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-bold text-foreground mb-1">Add Book to Catalog</h2>
-            <p className="text-xs text-muted-foreground mb-4">
-              Enter book publication metadata, shelf location, and inventory copies.
-            </p>
-
-            <form onSubmit={handleAddBook} className="space-y-4 text-xs">
-              <div>
-                <label className="font-semibold block mb-1">Book Title *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Distributed Operating Systems"
-                  value={bookForm.title}
-                  onChange={(e) => setBookForm({ ...bookForm, title: e.target.value })}
-                  className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+          <Card className="w-full max-w-md bg-card border-border/80 shadow-2xl">
+            <CardHeader className="pb-3 border-b border-border/60">
+              <CardTitle className="text-sm font-bold text-foreground">Request Library Space Slot</CardTitle>
+            </CardHeader>
+            <form onSubmit={handleCreateBooking}>
+              <CardContent className="space-y-3 pt-4 text-xs">
                 <div>
-                  <label className="font-semibold block mb-1">Primary Author(s) *</label>
+                  <label htmlFor="slot-date-input" className="block text-muted-foreground mb-1">Date</label>
                   <input
-                    type="text"
+                    id="slot-date-input"
+                    type="date"
                     required
-                    placeholder="e.g. Andrew S. Tanenbaum"
-                    value={bookForm.author}
-                    onChange={(e) => setBookForm({ ...bookForm, author: e.target.value })}
-                    className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    value={formData.date}
+                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                    className="w-full bg-secondary/60 border border-border/60 rounded px-3 py-1.5 text-foreground"
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="slot-start-time" className="block text-muted-foreground mb-1">Start Time</label>
+                    <input
+                      id="slot-start-time"
+                      type="time"
+                      required
+                      value={formData.start_time}
+                      onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
+                      className="w-full bg-secondary/60 border border-border/60 rounded px-3 py-1.5 text-foreground"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="slot-end-time" className="block text-muted-foreground mb-1">End Time</label>
+                    <input
+                      id="slot-end-time"
+                      type="time"
+                      required
+                      value={formData.end_time}
+                      onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
+                      className="w-full bg-secondary/60 border border-border/60 rounded px-3 py-1.5 text-foreground"
+                    />
+                  </div>
+                </div>
                 <div>
-                  <label className="font-semibold block mb-1">ISBN Code *</label>
-                  <input
-                    type="text"
+                  <label htmlFor="slot-purpose-input" className="block text-muted-foreground mb-1">Purpose</label>
+                  <textarea
+                    id="slot-purpose-input"
                     required
-                    placeholder="e.g. 978-0133806106"
-                    value={bookForm.isbn}
-                    onChange={(e) => setBookForm({ ...bookForm, isbn: e.target.value })}
-                    className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+                    rows={3}
+                    placeholder="e.g. CS301 Systems Lab Research Session"
+                    value={formData.purpose}
+                    onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
+                    className="w-full bg-secondary/60 border border-border/60 rounded px-3 py-1.5 text-foreground"
                   />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-semibold block mb-1">Category / Discipline</label>
-                  <select
-                    value={bookForm.category}
-                    onChange={(e) => setBookForm({ ...bookForm, category: e.target.value })}
-                    className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="COMPUTER_SCIENCE">Computer Science & AI</option>
-                    <option value="MATHEMATICS">Mathematics</option>
-                    <option value="ELECTRONICS">Electronics</option>
-                    <option value="MECHANICAL">Mechanical</option>
-                    <option value="PHYSICS">Physics</option>
-                    <option value="MANAGEMENT">Management</option>
-                    <option value="HUMANITIES">Humanities</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="font-semibold block mb-1">Shelf / Rack Location *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Rack CS-08, Shelf B"
-                    value={bookForm.shelf_location}
-                    onChange={(e) => setBookForm({ ...bookForm, shelf_location: e.target.value })}
-                    className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-semibold block mb-1">Total Copies *</label>
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    value={bookForm.total_copies}
-                    onChange={(e) => {
-                      const v = parseInt(e.target.value) || 1;
-                      setBookForm({ ...bookForm, total_copies: v, available_copies: v });
-                    }}
-                    className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-                <div>
-                  <label className="font-semibold block mb-1">Publisher</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Pearson / MIT Press"
-                    value={bookForm.publisher}
-                    onChange={(e) => setBookForm({ ...bookForm, publisher: e.target.value })}
-                    className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="font-semibold block mb-1">Description / Summary</label>
-                <textarea
-                  rows={3}
-                  placeholder="Summary of topics covered..."
-                  value={bookForm.description}
-                  onChange={(e) => setBookForm({ ...bookForm, description: e.target.value })}
-                  className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-border/60">
-                <button
+              </CardContent>
+              <div className="p-4 border-t border-border/60 flex items-center justify-end gap-2">
+                <Button
                   type="button"
-                  onClick={() => setShowAddBookModal(false)}
-                  className="px-4 py-2 border border-border/80 rounded-lg hover:bg-secondary/60 transition-colors"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowBookingModal(false)}
+                  className="text-xs"
                 >
                   Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg shadow-md transition-colors disabled:opacity-50"
-                >
-                  {submitting ? "Saving..." : "Add to Catalog"}
-                </button>
+                </Button>
+                <Button type="submit" variant="gradient" size="sm" disabled={actionLoading} className="text-xs">
+                  {actionLoading ? "Submitting..." : "Submit Request"}
+                </Button>
               </div>
             </form>
-          </div>
+          </Card>
         </div>
       )}
 
-      {/* Return Book Modal */}
-      {returnModal.issue && (
+      {/* REJECT MODAL WITH REQUIRED REASON */}
+      {rejectingBooking && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border border-border/80 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in-95">
-            <h2 className="text-lg font-bold text-foreground mb-1">Process Book Return</h2>
-            <p className="text-xs text-muted-foreground mb-4">
-              Return book to available shelf inventory and settle overdue fines.
-            </p>
-
-            <div className="space-y-4 text-xs">
-              <div className="bg-secondary/30 p-3 rounded-lg border border-border/40 space-y-1">
-                <p className="font-bold text-foreground text-sm">{returnModal.issue.book_title}</p>
-                <p className="text-muted-foreground">Borrower: {returnModal.issue.user_name}</p>
-                <p className="text-muted-foreground font-mono">
-                  Due: {returnModal.issue.due_date}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="finePaidCheck"
-                  checked={finePaid}
-                  onChange={(e) => setFinePaid(e.target.checked)}
-                  className="rounded border-border"
-                />
-                <label htmlFor="finePaidCheck" className="cursor-pointer font-medium">
-                  Collect and mark overdue fines as settled
-                </label>
-              </div>
-
+          <Card className="w-full max-w-md bg-card border-border/80 shadow-2xl">
+            <CardHeader className="pb-3 border-b border-border/60">
+              <CardTitle className="text-sm font-bold text-foreground">Reject Library Booking</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 pt-4 text-xs">
+              <p className="text-muted-foreground">
+                Per Section 8 rules, a formal justification reason is strictly required when rejecting a booking.
+              </p>
               <div>
-                <label className="font-semibold block mb-1">Condition / Return Remarks</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Returned in good condition"
-                  value={returnRemarks}
-                  onChange={(e) => setReturnRemarks(e.target.value)}
-                  className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-border/60">
-                <button
-                  type="button"
-                  onClick={() => setReturnModal({ issue: null })}
-                  className="px-4 py-2 border border-border/80 rounded-lg hover:bg-secondary/60 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleReturnBook}
-                  disabled={actionLoading}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg shadow-md transition-colors disabled:opacity-50"
-                >
-                  {actionLoading ? "Processing..." : "Confirm Return"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Mentor Book Request Modal */}
-      {showRequestModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border border-border/80 rounded-2xl w-full max-w-lg p-6 shadow-2xl animate-in fade-in zoom-in-95">
-            <h2 className="text-lg font-bold text-foreground mb-1">Mentor Library Request</h2>
-            <p className="text-xs text-muted-foreground mb-4">
-              Submit a book reservation, acquisition proposal, or reference hold to the Library Staff.
-            </p>
-
-            <form onSubmit={handleCreateRequest} className="space-y-4 text-xs">
-              <div>
-                <label className="font-semibold block mb-1">Target Book *</label>
-                <select
-                  required
-                  value={requestForm.book}
-                  onChange={(e) => {
-                    const selBook = books.find((b) => b.id === e.target.value);
-                    setRequestForm({
-                      ...requestForm,
-                      book: e.target.value,
-                      book_title: selBook?.title || "",
-                    });
-                  }}
-                  className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  <option value="">Select a title from the catalog...</option>
-                  {books.map((b) => (
-                    <option key={b.id} value={b.id} className="bg-slate-900 text-foreground">
-                      {b.title} — {b.author} ({b.available_copies} free)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-semibold block mb-1">Request Type</label>
-                  <select
-                    value={requestForm.request_type}
-                    onChange={(e) => setRequestForm({ ...requestForm, request_type: e.target.value })}
-                    className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="RESERVATION">Reservation for Cohort</option>
-                    <option value="ACQUISITION">New Edition / Additional Copies</option>
-                    <option value="HOLD">Academic Reference Hold</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="font-semibold block mb-1">Urgency</label>
-                  <select
-                    value={requestForm.urgency}
-                    onChange={(e) => setRequestForm({ ...requestForm, urgency: e.target.value })}
-                    className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="LOW">Low (Upcoming Semester)</option>
-                    <option value="MEDIUM">Medium (Current Coursework)</option>
-                    <option value="HIGH">High (Immediate Exam Prep)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="font-semibold block mb-1">Justification / Cohort Notes *</label>
+                <label htmlFor="reject-reason-input" className="block text-muted-foreground mb-1">Reason for Rejection *</label>
                 <textarea
+                  id="reject-reason-input"
                   required
                   rows={3}
-                  placeholder="e.g. 15 mentee students require this reference text for upcoming mid-term algorithm assignments..."
-                  value={requestForm.justification}
-                  onChange={(e) => setRequestForm({ ...requestForm, justification: e.target.value })}
-                  className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  placeholder="Specify conflict or institutional justification..."
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  className="w-full bg-secondary/60 border border-border/60 rounded px-3 py-1.5 text-foreground"
                 />
               </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-border/60">
-                <button
-                  type="button"
-                  onClick={() => setShowRequestModal(false)}
-                  className="px-4 py-2 border border-border/80 rounded-lg hover:bg-secondary/60 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-semibold rounded-lg shadow-md transition-colors disabled:opacity-50"
-                >
-                  {submitting ? "Submitting..." : "Submit to Library Staff"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Library Staff Request Review Modal */}
-      {reviewReqModal.req && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border border-border/80 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in-95">
-            <h2 className="text-lg font-bold text-foreground mb-1">
-              {reviewReqModal.action === "APPROVED" ? "Approve Mentor Request" : "Reject Mentor Request"}
-            </h2>
-            <p className="text-xs text-muted-foreground mb-4">
-              {reviewReqModal.req.book_title} — Requested by {reviewReqModal.req.requested_by_name}
-            </p>
-
-            <div className="space-y-4 text-xs">
-              <div className="bg-secondary/30 p-3 rounded-lg border border-border/40 space-y-1">
-                <p><strong>Justification:</strong> {reviewReqModal.req.justification}</p>
-                <p><strong>Type:</strong> {reviewReqModal.req.request_type} • <strong>Urgency:</strong> {reviewReqModal.req.urgency}</p>
-              </div>
-
-              <div>
-                <label className="font-semibold block mb-1">Staff Remarks</label>
-                <input
-                  type="text"
-                  placeholder={
-                    reviewReqModal.action === "APPROVED"
-                      ? "e.g. Copies held at Issue Desk 2 for 48 hours."
-                      : "e.g. Currently unavailable; reprint on order."
-                  }
-                  value={reviewRemarks}
-                  onChange={(e) => setReviewRemarks(e.target.value)}
-                  className="w-full bg-secondary/50 border border-border/80 rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-border/60">
-                <button
-                  type="button"
-                  onClick={() => setReviewReqModal({ req: null, action: "APPROVED" })}
-                  className="px-4 py-2 border border-border/80 rounded-lg hover:bg-secondary/60 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleReviewRequest}
-                  disabled={actionLoading}
-                  className={`px-4 py-2 font-semibold rounded-lg shadow-md transition-colors disabled:opacity-50 text-white ${
-                    reviewReqModal.action === "APPROVED"
-                      ? "bg-emerald-600 hover:bg-emerald-500"
-                      : "bg-rose-600 hover:bg-rose-500"
-                  }`}
-                >
-                  {actionLoading
-                    ? "Processing..."
-                    : reviewReqModal.action === "APPROVED"
-                    ? "Confirm Approval"
-                    : "Confirm Rejection"}
-                </button>
-              </div>
+            </CardContent>
+            <div className="p-4 border-t border-border/60 flex items-center justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setRejectingBooking(null)}
+                className="text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={actionLoading || !rejectReason.trim()}
+                onClick={handleReject}
+                className="text-xs"
+              >
+                {actionLoading ? "Rejecting..." : "Confirm Rejection"}
+              </Button>
             </div>
-          </div>
+          </Card>
         </div>
       )}
     </div>

@@ -45,7 +45,6 @@ INSTALLED_APPS = [
     'assignments.apps.AssignmentsConfig',
     'attendance.apps.AttendanceConfig',
     'fees.apps.FeesConfig',
-    'payroll.apps.PayrollConfig',
     'communication.apps.CommunicationConfig',
     'leave.apps.LeaveConfig',
     'printshop.apps.PrintshopConfig',

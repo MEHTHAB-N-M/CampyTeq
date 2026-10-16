@@ -1,5 +1,6 @@
 import pytest
 from datetime import date, timedelta
+from django.utils import timezone
 from rest_framework.test import APIClient
 from colleges.models import College
 from accounts.models import User
@@ -88,7 +89,7 @@ class TestCommunicationWorkflow:
         # Mentor Assignment
         MentorAssignment.objects.create(
             college=self.college, mentor=self.faculty_mentor, student=self.student,
-            assigned_date=date(2026, 8, 15), is_active=True
+            assigned_on=timezone.now(), is_active=True
         )
 
     def test_announcements_audience_scoping_and_tenancy(self):

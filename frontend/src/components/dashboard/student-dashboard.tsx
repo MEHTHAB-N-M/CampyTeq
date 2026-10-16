@@ -20,6 +20,7 @@ import { useAuth } from "@/lib/auth";
 
 export function StudentDashboard() {
   const { user } = useAuth();
+  const isParent = user?.role === "PARENT";
 
   const metrics = [
     {
@@ -43,59 +44,74 @@ export function StudentDashboard() {
       badgeVariant: "info" as const,
     },
     {
-      title: "Active Assignments",
-      value: "2 Pending",
-      sub: "Data Structures & Python",
-      icon: FileText,
+      title: isParent ? "Current CGPA" : "Active Assignments",
+      value: isParent ? "8.85 / 10" : "2 Pending",
+      sub: isParent ? "Semester 2 Grade Card" : "Data Structures & Python",
+      icon: isParent ? GraduationCap : FileText,
       color: "text-amber-400",
       bg: "bg-amber-500/10",
-      badge: "Due this Friday",
+      badge: isParent ? "Top 10% in Class" : "Due this Friday",
       badgeVariant: "warning" as const,
     },
-    {
-      title: "Print Orders",
-      value: "1 Ready",
-      sub: "Project Report (42 Pages)",
-      icon: Printer,
-      color: "text-purple-400",
-      bg: "bg-purple-500/10",
-      badge: "Ready at Counter",
-      badgeVariant: "default" as const,
-    },
+    ...(isParent ? [
+      {
+        title: "Disciplinary Record",
+        value: "Exemplary",
+        sub: "No Infractions Recorded",
+        icon: UserCheck,
+        color: "text-teal-400",
+        bg: "bg-teal-500/10",
+        badge: "Clean Record",
+        badgeVariant: "success" as const,
+      }
+    ] : [
+      {
+        title: "Print Orders",
+        value: "1 Ready",
+        sub: "Project Report (42 Pages)",
+        icon: Printer,
+        color: "text-purple-400",
+        bg: "bg-purple-500/10",
+        badge: "Ready at Counter",
+        badgeVariant: "default" as const,
+      }
+    ]),
   ];
 
   return (
     <div className="space-y-6">
-      {/* Student Profile Card */}
+      {/* Student/Ward Profile Card */}
       <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900/80 via-indigo-950/40 to-slate-900/80 border border-indigo-500/20 backdrop-blur-xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="h-16 w-16 rounded-2xl bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 font-bold text-xl flex items-center justify-center shadow-inner">
-              {user?.first_name[0]}
-              {user?.last_name ? user.last_name[0] : ""}
+              {isParent ? "W" : (user?.first_name[0] || "S")}
+              {isParent ? "D" : (user?.last_name ? user.last_name[0] : "")}
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="text-xs border-indigo-500/40 text-indigo-300">
-                  Roll # 2026-CSE-042
+                  {isParent ? "Linked Ward: Rahul Kumar (Roll # 2026-CSE-042)" : "Roll # 2026-CSE-042"}
                 </Badge>
                 <span className="text-xs text-muted-foreground">B.Tech CSE • Semester 3</span>
               </div>
               <h1 className="text-2xl font-bold tracking-tight text-white mt-1">
-                {user?.full_name}
+                {isParent ? "Ward Academic Overview" : user?.full_name}
               </h1>
               <p className="text-xs text-slate-300 mt-0.5">
-                {user?.college?.name || "Apex Institute of Technology"} • Mentor: Prof. Anil Verma
+                {user?.college?.name || "Apex Institute of Technology"} • {isParent ? "Guardian: Suresh Sharma (Father) • Verified Link" : "Mentor: Prof. Anil Verma"}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <Button variant="outline" size="sm">
-              <FileText className="h-4 w-4 mr-1.5" /> Hall Ticket
+              <FileText className="h-4 w-4 mr-1.5" /> {isParent ? "Grade Report" : "Hall Ticket"}
             </Button>
-            <Button variant="gradient" size="sm">
-              <Printer className="h-4 w-4 mr-1.5" /> Order Print
-            </Button>
+            {!isParent && (
+              <Button variant="gradient" size="sm">
+                <Printer className="h-4 w-4 mr-1.5" /> Order Print
+              </Button>
+            )}
           </div>
         </div>
       </div>

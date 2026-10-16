@@ -38,6 +38,44 @@ class BiometricProfile(TenantModel):
         return f"Biometrics for {self.student} ({self.status})"
 
 
+class FaceEnrollment(TenantModel):
+    """
+    Enrolled facial reference embedding vectors with explicit legal consent.
+    India DPDP Act 2023 compliance:
+    - Requires consent_given=True and recorded consent_by (guardian for minors).
+    - Retention period: 3 years or student active enrollment lifecycle.
+    - Only PRINCIPAL or assigned administrative delegate manages enrollments.
+    """
+    student = models.OneToOneField(
+        'students.Student',
+        on_delete=models.CASCADE,
+        related_name='face_enrollment'
+    )
+    embedding = models.JSONField(
+        default=list,
+        help_text="Reference embedding numerical vector array (512-dim or 128-dim)"
+    )
+    consent_given = models.BooleanField(default=False, db_index=True)
+    consent_by = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='consented_face_enrollments',
+        help_text="Guardian or student user who granted biometric consent"
+    )
+    consent_at = models.DateTimeField(null=True, blank=True)
+    retention_until = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"FaceEnrollment: {self.student.roll_number} [Consent: {'YES' if self.consent_given else 'NO'}]"
+
+
+
 class DetectionEvent(TenantModel):
     """Individual edge CV sighting event logged by campus cameras."""
     EVENT_TYPE_CHOICES = [

@@ -9,7 +9,6 @@ from academics.models import Course, Batch, Semester
 from faculty.models import Faculty
 from students.models import Student
 from fees.models import FeeStructure, StudentInvoice, Payment, PaymentReceipt
-from payroll.models import SalaryStructure, Payslip
 
 
 @pytest.mark.django_db
@@ -106,64 +105,8 @@ class TestFinanceWorkflow:
         assert Decimal(settle_res.data["invoice"]["balance_due"]) == Decimal("0.00")
         assert Payment.objects.filter(invoice=invoice).count() == 2
 
-    def test_payroll_generation_and_confidentiality(self):
-        """Accountant runs monthly payroll, formulas verify, and faculty only views personal payslip."""
-        # 1. Set up SalaryStructure for Faculty
-        ss = SalaryStructure.objects.create(
-            college=self.college,
-            faculty=self.faculty,
-            basic_salary=Decimal("60000.00"),
-            hra=Decimal("15000.00"),
-            da=Decimal("10000.00"),
-            special_allowance=Decimal("5000.00"),
-            pf_deduction=Decimal("4000.00"),
-            tax_deduction=Decimal("6000.00"),
-            other_deductions=Decimal("0.00"),
-        )
-        assert ss.gross_salary == Decimal("90000.00")
-        assert ss.total_deductions == Decimal("10000.00")
-        assert ss.net_salary == Decimal("80000.00")
-
-        # 2. Accountant blocked from running payroll (scope strictly fees only)
-        self.client.force_authenticate(user=self.accountant)
-        blocked_res = self.client.post("/api/v1/payroll/payslips/generate_monthly/", {
-            "month": 9,
-            "year": 2026,
-        })
-        assert blocked_res.status_code == 403
-
-        # 3. Principal runs monthly payroll for September 2026
-        self.client.force_authenticate(user=self.principal)
-        gen_res = self.client.post("/api/v1/payroll/payslips/generate_monthly/", {
-            "month": 9,
-            "year": 2026,
-        })
-        assert gen_res.status_code == 200
-        assert gen_res.data["generated"] == 1
-
-        # Verify Payslip values
-        payslip = Payslip.objects.get(faculty=self.faculty, month=9, year=2026)
-        assert payslip.gross_salary == Decimal("90000.00")
-        assert payslip.net_salary == Decimal("80000.00")
-        assert payslip.status == "PROCESSED"
-
-        # 3. Faculty views personal payslip
-        self.client.force_authenticate(user=self.faculty_user)
-        fac_res = self.client.get("/api/v1/payroll/payslips/")
-        assert fac_res.status_code == 200
-        results = fac_res.data.get("results", fac_res.data)
-        assert len(results) == 1
-        assert str(results[0]["faculty"]) == str(self.faculty.id)
-
-        # 4. Student is blocked from accessing payslips
-        self.client.force_authenticate(user=self.student_user)
-        stu_res = self.client.get("/api/v1/payroll/payslips/")
-        assert stu_res.status_code == 200
-        stu_results = stu_res.data.get("results", stu_res.data)
-        assert len(stu_results) == 0
-
-    def test_fees_and_payroll_tenant_isolation(self):
-        """Beta College user cannot access Apex College invoices, payments, or payslips."""
+    def test_fees_tenant_isolation(self):
+        """Beta College user cannot access Apex College invoices or payments."""
         invoice = StudentInvoice.objects.create(
             college=self.college,
             student=self.student,

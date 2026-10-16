@@ -34,21 +34,27 @@ export function Sidebar() {
 
   if (!user) return null;
 
-  const role = user.email?.toLowerCase().includes("hod") ? "HOD" : user.role;
+  const role = user.active_role || user.role;
 
-  // Build navigation items according to current role
+  // Build navigation items according to active role (Section 11 & 14 spec)
   const navItems = [
     {
-      title: "Dashboard",
+      title: role === "PARENT" ? "Ward Dashboard" : "Dashboard",
       href: "/dashboard",
       icon: LayoutDashboard,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "MENTOR", "STUDENT", "PARENT"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "MENTOR", "STUDENT", "PARENT"],
     },
     {
-      title: role === "MENTOR" ? "Assigned Students (HOD)" : "Students",
+      title: "Mentees (360° Profile)",
+      href: "/dashboard/mentorship",
+      icon: GraduationCap,
+      roles: ["MENTOR", "PRINCIPAL", "SUPER_ADMIN"],
+    },
+    {
+      title: "Students",
       href: "/dashboard/students",
       icon: GraduationCap,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "MENTOR", "FACULTY"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "CLASS_INCHARGE", "FACULTY"],
     },
     {
       title: "Faculty & Staff",
@@ -57,88 +63,82 @@ export function Sidebar() {
       roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD"],
     },
     {
-      title: ["HOD", "PRINCIPAL", "SUPER_ADMIN"].includes(role) || user.email?.toLowerCase().includes("hod") ? "Create & Manage Timetable" : "Timetable",
+      title: ["HOD", "PRINCIPAL", "SUPER_ADMIN"].includes(role) ? "Create & Manage Timetable" : "Timetable",
       href: "/dashboard/timetable",
       icon: CalendarCheck,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "STUDENT"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "STUDENT", "PARENT"],
     },
     {
-      title: "Exams & Results",
+      title: role === "PARENT" ? "Ward Marks & Results" : "Exams & Results",
       href: "/dashboard/exams",
       icon: FileSpreadsheet,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "STUDENT", "PARENT"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "STUDENT", "PARENT"],
     },
     {
       title: "Assignments",
       href: "/dashboard/assignments",
       icon: FileText,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "STUDENT"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "STUDENT"],
     },
     {
-      title: "Attendance",
+      title: role === "PARENT" ? "Ward Attendance" : "Attendance",
       href: "/dashboard/attendance",
       icon: CalendarCheck,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "STUDENT", "PARENT"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "STUDENT", "PARENT"],
     },
     {
-      title: "Fees & Invoices",
+      title: role === "PARENT" ? "Fee Ledger & Receipts" : "Fees & Invoices",
       href: "/dashboard/fees",
       icon: CreditCard,
       roles: ["SUPER_ADMIN", "PRINCIPAL", "ACCOUNTANT", "STUDENT", "PARENT"],
     },
     {
-      title: "Payroll & Salary",
-      href: "/dashboard/payroll",
-      icon: FileSpreadsheet,
-      roles: ["SUPER_ADMIN", "PRINCIPAL"],
-    },
-    {
       title: "Facility Bookings",
       href: "/dashboard/facilities",
       icon: Building,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "MENTOR"],
     },
     {
       title: "Announcements",
       href: "/dashboard/announcements",
       icon: Megaphone,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "STUDENT", "PARENT", "ACCOUNTANT"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "STUDENT", "PARENT", "ACCOUNTANT"],
     },
     {
       title: "Leave Requests",
       href: "/dashboard/leave",
       icon: CalendarX,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "STUDENT"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "STUDENT"],
     },
     {
       title: "Documents & Notes",
       href: "/dashboard/documents",
       icon: FileCheck2,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "STUDENT"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "STUDENT"],
     },
     {
       title: "Campus Print Shop",
       href: "/dashboard/printshop",
       icon: Printer,
-      roles: ["PRINT_STAFF", "STUDENT", "FACULTY", "HOD"],
+      roles: ["PRINT_STAFF", "STUDENT", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "HOD"],
     },
     {
-      title: "Library Catalog",
+      title: "Library Bookings",
       href: "/dashboard/library",
       icon: Library,
-      roles: ["LIBRARY_STAFF", "PRINCIPAL", "HOD", "FACULTY"],
+      roles: ["LIBRARY_FACULTY", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "MENTOR"],
     },
     {
       title: "Authorized Cameras",
       href: "/dashboard/cameras",
       icon: Video,
-      roles: ["SECURITY", "SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY"],
+      roles: ["SECURITY", "SUPER_ADMIN", "PRINCIPAL"],
     },
     {
       title: "Analytics & AI Radar",
       href: "/dashboard/analytics",
       icon: BarChart3,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "MENTOR"],
+      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "CLASS_INCHARGE", "MENTOR"],
     },
     {
       title: "Audit Logs",
@@ -149,7 +149,7 @@ export function Sidebar() {
   ];
 
   const filteredNav = navItems.filter((item) => {
-    return item.roles.includes(role) || (role === "SUPER_ADMIN" && !["PRINT_STAFF", "LIBRARY_STAFF", "SECURITY"].includes(item.roles[0]));
+    return item.roles.includes(role);
   });
 
   return (

@@ -1,196 +1,353 @@
-from datetime import date
-from decimal import Decimal
+from datetime import date, datetime
+from django.db import transaction
 from django.utils import timezone
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions, status, views
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from common.permissions import IsTenantMember
-from library.models import Book, BookIssue, LibraryRequest
-from library.serializers import (
-    BookSerializer,
-    BookIssueSerializer,
-    BookIssueCreateSerializer,
-    BookReturnActionSerializer,
-    LibraryRequestSerializer,
-    LibraryRequestReviewSerializer,
+from common.permissions import IsTenantMember, get_acting_role
+from accounts.models import AuditLog
+from faculty.models import Faculty
+from .models import LibraryBooking
+from .serializers import (
+    LibraryBookingSerializer,
+    LibraryBookingCreateSerializer,
+    LibraryAvailabilitySerializer
 )
-from communication.models import Notification
 
-
-class BookViewSet(viewsets.ModelViewSet):
-    serializer_class = BookSerializer
-    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
-    filterset_fields = ["category"]
-    search_fields = ["title", "author", "isbn", "publisher", "shelf_location"]
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.role in ["STUDENT", "PARENT"]:
-            return Book.objects.none()
-        return Book.objects.filter(college=user.college)
-
-    def perform_create(self, serializer):
-        serializer.save(college=self.request.user.college)
-
-
-class BookIssueViewSet(viewsets.ModelViewSet):
-    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
-    filterset_fields = ["status", "fine_paid", "book", "user"]
-    search_fields = ["book__title", "book__isbn", "user__first_name", "user__last_name", "student__roll_number"]
-
-    def get_serializer_class(self):
-        if self.action == "create":
-            return BookIssueCreateSerializer
-        return BookIssueSerializer
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.role in ["STUDENT", "PARENT"]:
-            return BookIssue.objects.none()
-        qs = BookIssue.objects.filter(college=user.college).select_related(
-            "book", "user", "student", "issued_by"
-        )
-        if user.role in ["LIBRARY_STAFF", "PRINCIPAL"]:
-            return qs
-        return qs.filter(user=user)
-
-    @action(detail=True, methods=["post"])
-    def mark_return(self, request, pk=None):
-        """Process book return, calculate overdue fine, and restock inventory."""
-        issue = self.get_object()
-        if issue.status == BookIssue.IssueStatus.RETURNED:
-            return Response({"detail": "This book has already been returned."}, status=status.HTTP_400_BAD_REQUEST)
-
-        serializer = BookReturnActionSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        return_date = date.today()
-        issue.return_date = return_date
-        issue.status = BookIssue.IssueStatus.RETURNED
-
-        fine = issue.calculate_overdue_fine(Decimal("5.00"))
-        issue.fine_amount = fine
-        issue.fine_paid = serializer.validated_data.get("fine_paid", False)
-        if serializer.validated_data.get("remarks"):
-            issue.remarks = f"{issue.remarks} | {serializer.validated_data['remarks']}".strip(" | ")
-
-        issue.save()
-
-        # Restock inventory
-        book = issue.book
-        book.available_copies += 1
-        book.save()
-
-        # Send notification to borrower
-        Notification.objects.create(
-            college=issue.college,
-            recipient=issue.user,
-            title=f"Library Return Confirmed: {book.title}",
-            message=f"Book returned successfully.{f' Overdue fine assessed: ₹{fine}' if fine > 0 else ' No overdue fines.'}",
-            notification_type="SYSTEM",
-            action_url="/dashboard/library",
-        )
-
-        return Response(BookIssueSerializer(issue).data)
-
-    @action(detail=False, methods=["get"])
-    def overdue_list(self, request):
-        today = date.today()
-        qs = self.get_queryset().filter(
-            status=BookIssue.IssueStatus.ISSUED,
-            due_date__lt=today
-        )
-        serializer = BookIssueSerializer(qs, many=True)
-        return Response(serializer.data)
-
-
-class LibraryRequestViewSet(viewsets.ModelViewSet):
+class LibraryBookingViewSet(viewsets.ModelViewSet):
     """
-    Library Request management:
-    - Mentors can raise requests (borrowing/reservation/procurement).
-    - Library Staff and Principal can view and review incoming requests.
-    - Status updates notify the requesting Mentor.
+    Library space booking workflow (Section 8 of Specification):
+    - Requesters: FACULTY, LAB_FACULTY, HOD (in Faculty mode).
+    - Only LIBRARY_FACULTY approves or rejects.
+    - Students and parents have zero library access.
     """
-    serializer_class = LibraryRequestSerializer
     permission_classes = [permissions.IsAuthenticated, IsTenantMember]
-    filterset_fields = ["status", "request_type", "user", "book"]
-    search_fields = ["book__title", "suggested_title", "notes", "user__first_name", "user__last_name"]
+    serializer_class = LibraryBookingSerializer
 
     def get_queryset(self):
         user = self.request.user
-        if user.role in ["STUDENT", "PARENT"]:
-            return LibraryRequest.objects.none()
-        qs = LibraryRequest.objects.filter(college=user.college).select_related(
-            "user", "book", "reviewed_by"
-        )
-        if user.role in ["LIBRARY_STAFF", "PRINCIPAL", "SUPER_ADMIN"]:
+        acting_role = get_acting_role(self.request)
+
+        # Students and parents have no access
+        if acting_role in ['STUDENT', 'PARENT'] or user.role in ['STUDENT', 'PARENT']:
+            return LibraryBooking.objects.none()
+
+        qs = LibraryBooking.objects.filter(college=user.college).select_related('requested_by__user', 'decided_by')
+
+        if acting_role == 'LIBRARY_FACULTY':
             return qs
-        # Mentors and HODs view their own requests
-        return qs.filter(user=user)
 
-    def perform_create(self, serializer):
-        user = self.request.user
-        if user.role not in ["HOD", "MENTOR", "FACULTY", "PRINCIPAL", "SUPER_ADMIN"]:
-            raise permissions.exceptions.PermissionDenied("Only HODs, Faculty, and Mentors can submit library requests.")
-        
-        req = serializer.save(
-            college=user.college,
-            user=user,
-            status="PENDING",
-        )
+        faculty_profile = getattr(user, 'faculty_profile', None)
+        if faculty_profile:
+            return qs.filter(requested_by=faculty_profile)
 
-        # Notify Library Staff of incoming request
-        from accounts.models import User as AccountUser
-        staff_users = AccountUser.objects.filter(college=user.college, role="LIBRARY_STAFF")
-        title_name = req.book.title if req.book else req.suggested_title
-        for staff in staff_users:
-            Notification.objects.create(
-                college=user.college,
-                recipient=staff,
-                title=f"New Library Request: {title_name}",
-                message=f"Mentor {user.get_full_name()} submitted a {req.get_request_type_display()} request.",
-                notification_type="SYSTEM",
-                action_url="/dashboard/library",
+        if acting_role in ['SUPER_ADMIN', 'PRINCIPAL']:
+            return qs
+
+        return LibraryBooking.objects.none()
+
+    def create(self, request, *args, **kwargs):
+        user = request.user
+        acting_role = get_acting_role(request)
+
+        # Allowed requesters: FACULTY, LAB_FACULTY, HOD (in Faculty mode), CLASS_INCHARGE, MENTOR
+        allowed_requesters = ['FACULTY', 'LAB_FACULTY', 'HOD', 'CLASS_INCHARGE', 'MENTOR']
+        if acting_role not in allowed_requesters and user.role not in allowed_requesters:
+            return Response(
+                {'detail': 'Only faculty instructors, lab faculty, and HODs can request library bookings.'},
+                status=status.HTTP_403_FORBIDDEN
             )
 
-    @action(detail=True, methods=["post"])
-    def review(self, request, pk=None):
-        if request.user.role not in ["LIBRARY_STAFF", "PRINCIPAL"]:
-            return Response({
-                "success": False,
-                "message": "Only Library Staff or Principal can review library requests.",
-                "code": "PERMISSION_DENIED"
-            }, status=status.HTTP_403_FORBIDDEN)
+        faculty_profile = getattr(user, 'faculty_profile', None)
+        if not faculty_profile:
+            return Response(
+                {'detail': 'An active faculty profile is required to request a library booking.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
-        lib_req = self.get_object()
-        serializer = LibraryRequestReviewSerializer(data=request.data)
+        serializer = LibraryBookingCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        new_status = serializer.validated_data["status"]
-        remarks = serializer.validated_data.get("reviewer_remarks", "")
-
-        lib_req.status = new_status
-        lib_req.reviewer_remarks = remarks
-        lib_req.reviewed_by = request.user
-        lib_req.reviewed_at = timezone.now()
-        lib_req.save()
-
-        # If fulfilled / issued and copies available, decrement copies
-        if new_status == "FULFILLED" and lib_req.book:
-            if lib_req.book.available_copies > 0:
-                lib_req.book.available_copies -= 1
-                lib_req.book.save(update_fields=["available_copies"])
-
-        # Trigger notification to requesting Mentor
-        title_name = lib_req.book.title if lib_req.book else lib_req.suggested_title
-        Notification.objects.create(
-            college=lib_req.college,
-            recipient=lib_req.user,
-            title=f"Library Request {new_status}: {title_name}",
-            message=f"Your request has been {new_status.lower()} by {request.user.get_full_name()}. {f'Remarks: {remarks}' if remarks else ''}".strip(),
-            notification_type="SYSTEM",
-            action_url="/dashboard/library",
+        booking = LibraryBooking.objects.create(
+            college=user.college,
+            requested_by=faculty_profile,
+            date=serializer.validated_data['date'],
+            start_time=serializer.validated_data['start_time'],
+            end_time=serializer.validated_data['end_time'],
+            purpose=serializer.validated_data['purpose'],
+            status=LibraryBooking.BookingStatus.PENDING
         )
 
-        return Response(LibraryRequestSerializer(lib_req).data)
+        # Audit log creation
+        ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', ''))
+        if ip and ',' in ip:
+            ip = ip.split(',')[0].strip()
+        valid_ip = ip if ('.' in ip and ':' not in ip) else None
+
+        AuditLog.objects.create(
+            user=user,
+            college=user.college,
+            acting_role=acting_role,
+            action='LIBRARY_BOOKING_REQUEST',
+            resource_type='LibraryBooking',
+            resource_id=str(booking.id),
+            ip_address=valid_ip,
+            user_agent=request.META.get('HTTP_USER_AGENT', '')[:255],
+            old_values={},
+            new_values={'date': str(booking.date), 'start': str(booking.start_time), 'end': str(booking.end_time)}
+        )
+
+        return Response(LibraryBookingSerializer(booking).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'])
+    def mine(self, request):
+        """Returns all library bookings submitted by the authenticated requester."""
+        user = request.user
+        faculty_profile = getattr(user, 'faculty_profile', None)
+        if not faculty_profile:
+            return Response([])
+
+        qs = LibraryBooking.objects.filter(college=user.college, requested_by=faculty_profile).order_by('-date', '-start_time')
+        return Response(LibraryBookingSerializer(qs, many=True).data)
+
+    @action(detail=False, methods=['get'])
+    def pending(self, request):
+        """
+        GET /api/v1/library/bookings/pending/ (and /api/v1/library/pending/)
+        Only accessible by LIBRARY_FACULTY.
+        """
+        user = request.user
+        acting_role = get_acting_role(request)
+
+        if acting_role != 'LIBRARY_FACULTY' and acting_role not in ['SUPER_ADMIN', 'PRINCIPAL']:
+            return Response(
+                {'detail': 'Only Library Faculty can view the pending approval queue.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        qs = LibraryBooking.objects.filter(
+            college=user.college,
+            status=LibraryBooking.BookingStatus.PENDING
+        ).select_related('requested_by__user').order_by('date', 'start_time')
+
+        return Response(LibraryBookingSerializer(qs, many=True).data)
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        """
+        POST /api/v1/library/bookings/{id}/approve/
+        Only LIBRARY_FACULTY approves. Prevents overlapping approved bookings.
+        """
+        user = request.user
+        acting_role = get_acting_role(request)
+
+        if acting_role != 'LIBRARY_FACULTY' and acting_role not in ['SUPER_ADMIN', 'PRINCIPAL']:
+            return Response(
+                {'detail': 'Only Library Faculty can approve library bookings.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        with transaction.atomic():
+            booking = LibraryBooking.objects.select_for_update().filter(id=pk, college=user.college).first()
+            if not booking:
+                return Response({'detail': 'Booking not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+            if booking.status == LibraryBooking.BookingStatus.APPROVED:
+                return Response({'detail': 'Booking is already approved.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Overlap check against existing APPROVED bookings
+            overlap = LibraryBooking.objects.select_for_update().filter(
+                college=user.college,
+                date=booking.date,
+                status=LibraryBooking.BookingStatus.APPROVED,
+                start_time__lt=booking.end_time,
+                end_time__gt=booking.start_time
+            ).exclude(pk=booking.pk).exists()
+
+            if overlap:
+                return Response(
+                    {'detail': 'Conflict: This slot overlaps with an already approved booking.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            booking.status = LibraryBooking.BookingStatus.APPROVED
+            booking.decided_by = user
+            booking.decided_at = timezone.now()
+            booking.save()
+
+            # Audit log
+            ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', ''))
+            if ip and ',' in ip:
+                ip = ip.split(',')[0].strip()
+            valid_ip = ip if ('.' in ip and ':' not in ip) else None
+
+            AuditLog.objects.create(
+                user=user,
+                college=user.college,
+                acting_role=acting_role,
+                action='LIBRARY_BOOKING_APPROVE',
+                resource_type='LibraryBooking',
+                resource_id=str(booking.id),
+                ip_address=valid_ip,
+                user_agent=request.META.get('HTTP_USER_AGENT', '')[:255],
+                old_values={'status': 'PENDING'},
+                new_values={'status': 'APPROVED'}
+            )
+
+        return Response(LibraryBookingSerializer(booking).data)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """
+        POST /api/v1/library/bookings/{id}/reject/
+        Rejection requires a reason.
+        """
+        user = request.user
+        acting_role = get_acting_role(request)
+
+        if acting_role != 'LIBRARY_FACULTY' and acting_role not in ['SUPER_ADMIN', 'PRINCIPAL']:
+            return Response(
+                {'detail': 'Only Library Faculty can reject library bookings.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        reason = request.data.get('reject_reason') or request.data.get('reason', '').strip()
+        if not reason:
+            return Response(
+                {'detail': 'A rejection reason is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        booking = LibraryBooking.objects.filter(id=pk, college=user.college).first()
+        if not booking:
+            return Response({'detail': 'Booking not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        booking.status = LibraryBooking.BookingStatus.REJECTED
+        booking.decided_by = user
+        booking.decided_at = timezone.now()
+        booking.reject_reason = reason
+        booking.save()
+
+        # Audit log
+        ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', ''))
+        if ip and ',' in ip:
+            ip = ip.split(',')[0].strip()
+        valid_ip = ip if ('.' in ip and ':' not in ip) else None
+
+        AuditLog.objects.create(
+            user=user,
+            college=user.college,
+            acting_role=acting_role,
+            action='LIBRARY_BOOKING_REJECT',
+            resource_type='LibraryBooking',
+            resource_id=str(booking.id),
+            ip_address=valid_ip,
+            user_agent=request.META.get('HTTP_USER_AGENT', '')[:255],
+            old_values={'status': 'PENDING'},
+            new_values={'status': 'REJECTED', 'reject_reason': reason}
+        )
+
+        return Response(LibraryBookingSerializer(booking).data)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        """
+        POST /api/v1/library/bookings/{id}/cancel/
+        Requester cancels own booking before the slot.
+        """
+        user = request.user
+        acting_role = get_acting_role(request)
+        faculty_profile = getattr(user, 'faculty_profile', None)
+
+        booking = LibraryBooking.objects.filter(id=pk, college=user.college).first()
+        if not booking:
+            return Response({'detail': 'Booking not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if acting_role not in ['SUPER_ADMIN', 'PRINCIPAL']:
+            if not faculty_profile or booking.requested_by_id != faculty_profile.id:
+                return Response({'detail': 'You can only cancel your own bookings.'}, status=status.HTTP_403_FORBIDDEN)
+
+        booking.status = LibraryBooking.BookingStatus.CANCELLED
+        booking.save()
+
+        # Audit log
+        ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', ''))
+        if ip and ',' in ip:
+            ip = ip.split(',')[0].strip()
+        valid_ip = ip if ('.' in ip and ':' not in ip) else None
+
+        AuditLog.objects.create(
+            user=user,
+            college=user.college,
+            acting_role=acting_role,
+            action='LIBRARY_BOOKING_CANCEL',
+            resource_type='LibraryBooking',
+            resource_id=str(booking.id),
+            ip_address=valid_ip,
+            user_agent=request.META.get('HTTP_USER_AGENT', '')[:255],
+            old_values={'status': 'PENDING'},
+            new_values={'status': 'CANCELLED'}
+        )
+
+        return Response({'message': 'Booking cancelled successfully.'})
+
+
+class LibraryAvailabilityView(views.APIView):
+    """
+    GET /api/v1/library/availability/?date=YYYY-MM-DD
+    Availability (Free / Pending / Booked, date and time only) visible to
+    LIBRARY_FACULTY, HOD, FACULTY, LAB_FACULTY.
+    Never returns requester or purpose to anyone except LIBRARY_FACULTY and the requester's own bookings.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
+
+    def get(self, request):
+        user = request.user
+        acting_role = get_acting_role(request)
+
+        # Students and parents are blocked
+        if acting_role in ['STUDENT', 'PARENT'] or user.role in ['STUDENT', 'PARENT']:
+            return Response({'detail': 'Students and parents have no library access.'}, status=status.HTTP_403_FORBIDDEN)
+
+        date_str = request.query_params.get('date')
+        if not date_str:
+            target_date = date.today()
+        else:
+            try:
+                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({'detail': 'Invalid date format (use YYYY-MM-DD).'}, status=status.HTTP_400_BAD_REQUEST)
+
+        bookings = LibraryBooking.objects.filter(
+            college=user.college,
+            date=target_date
+        ).exclude(status__in=[LibraryBooking.BookingStatus.CANCELLED, LibraryBooking.BookingStatus.REJECTED]).select_related('requested_by__user')
+
+        faculty_profile = getattr(user, 'faculty_profile', None)
+        is_lib_faculty = (acting_role == 'LIBRARY_FACULTY') or (acting_role in ['SUPER_ADMIN', 'PRINCIPAL'])
+
+        slots = []
+        for b in bookings:
+            is_own = bool(faculty_profile and b.requested_by_id == faculty_profile.id)
+            slot_status = "Booked" if b.status == LibraryBooking.BookingStatus.APPROVED else "Pending"
+
+            item = {
+                'id': str(b.id),
+                'date': b.date.isoformat(),
+                'start_time': b.start_time.strftime('%H:%M'),
+                'end_time': b.end_time.strftime('%H:%M'),
+                'status': slot_status,
+            }
+
+            # Spec: Never return requester or purpose to anyone except LIBRARY_FACULTY and the requester's own bookings
+            if is_lib_faculty or is_own:
+                item['purpose'] = b.purpose
+                item['requested_by_name'] = b.requested_by.user.get_full_name()
+
+            slots.append(item)
+
+        return Response({
+            'date': target_date.isoformat(),
+            'slots': slots
+        })

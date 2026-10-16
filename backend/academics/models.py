@@ -75,6 +75,22 @@ class Batch(TenantModel):
     def __str__(self):
         return f"{self.course.code} — {self.name}"
 
+    @property
+    def class_section(self):
+        cs = self.class_sections.first()
+        if not cs:
+            cs = ClassSection.objects.create(
+                college=self.college,
+                department=self.course.department,
+                course=self.course,
+                batch=self,
+                name=self.name,
+                academic_year=self.academic_year,
+                is_active=(self.status == 'ACTIVE')
+            )
+        return cs
+
+
 
 class Semester(TenantModel):
     batch = models.ForeignKey(
@@ -206,3 +222,119 @@ class TimetableEntry(TenantModel):
 
     def __str__(self):
         return f"{self.get_day_of_week_display()}: {self.subject.code} ({self.start_time.strftime('%H:%M')} - {self.end_time.strftime('%H:%M')}) in {self.room}"
+
+
+class ClassSection(TenantModel):
+    department = models.ForeignKey(
+        'departments.Department',
+        on_delete=models.CASCADE,
+        related_name='class_sections'
+    )
+    course = models.ForeignKey(
+        Course,
+        on_delete=models.CASCADE,
+        related_name='class_sections'
+    )
+    batch = models.ForeignKey(
+        Batch,
+        on_delete=models.CASCADE,
+        related_name='class_sections',
+        null=True,
+        blank=True
+    )
+    name = models.CharField(max_length=100, help_text="e.g. Section A, CSE-A")
+    academic_year = models.CharField(max_length=50, default="2026-2027")
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ['course', 'name']
+
+    def __str__(self):
+        return f"{self.course.code} - {self.name}"
+
+
+class ClassIncharge(TenantModel):
+    department = models.ForeignKey(
+        'departments.Department',
+        on_delete=models.CASCADE,
+        related_name='class_incharges'
+    )
+    class_section = models.ForeignKey(
+        ClassSection,
+        on_delete=models.CASCADE,
+        related_name='incharges'
+    )
+    faculty = models.ForeignKey(
+        'faculty.Faculty',
+        on_delete=models.CASCADE,
+        related_name='incharge_assignments'
+    )
+    academic_year = models.CharField(max_length=50, default="2026-2027")
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ['-academic_year', 'class_section']
+
+    def __str__(self):
+        return f"Incharge: {self.faculty.user.get_full_name()} for {self.class_section.name} ({self.academic_year})"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        from accounts.models import UserRole
+        if self.is_active:
+            UserRole.objects.update_or_create(
+                user=self.faculty.user,
+                college=self.college,
+                role='CLASS_INCHARGE',
+                source='assignment',
+                defaults={'is_active': True}
+            )
+        else:
+            if not ClassIncharge.objects.filter(faculty=self.faculty, is_active=True).exists():
+                UserRole.objects.filter(
+                    user=self.faculty.user,
+                    role='CLASS_INCHARGE',
+                    source='assignment'
+                ).update(is_active=False)
+
+
+class SubjectAssignment(TenantModel):
+    department = models.ForeignKey(
+        'departments.Department',
+        on_delete=models.CASCADE,
+        related_name='subject_assignments'
+    )
+    faculty = models.ForeignKey(
+        'faculty.Faculty',
+        on_delete=models.CASCADE,
+        related_name='subject_allocations'
+    )
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.CASCADE,
+        related_name='subject_allocations'
+    )
+    class_section = models.ForeignKey(
+        ClassSection,
+        on_delete=models.CASCADE,
+        related_name='subject_allocations'
+    )
+    academic_year = models.CharField(max_length=50, default="2026-2027")
+    is_active = models.BooleanField(default=True, db_index=True)
+    end_date = models.DateField(null=True, blank=True, help_text="Null for permanent; specific date for substitute faculty")
+
+    class Meta:
+        ordering = ['class_section', 'subject']
+
+    def __str__(self):
+        return f"{self.faculty.user.get_full_name()} ➔ {self.subject.code} in {self.class_section.name}"
+
+    @property
+    def is_currently_valid(self):
+        from django.utils import timezone
+        if not self.is_active:
+            return False
+        if self.end_date and self.end_date < timezone.now().date():
+            return False
+        return True
+

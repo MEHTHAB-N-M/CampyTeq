@@ -6,14 +6,15 @@ import { useAuth } from "@/lib/auth";
 
 const ROLE_DEFAULT_ROUTE: Record<string, string> = {
   PRINT_STAFF: "/dashboard/printshop",
-  LIBRARY_STAFF: "/dashboard/library",
+  LIBRARY_FACULTY: "/dashboard/library",
   SECURITY: "/dashboard/cameras",
   ACCOUNTANT: "/dashboard/fees",
+  PARENT: "/dashboard",
 };
 
 const ROLE_PERMITTED_ROUTES: Record<string, string[]> = {
   PRINT_STAFF: ["/dashboard/printshop"],
-  LIBRARY_STAFF: ["/dashboard/library"],
+  LIBRARY_FACULTY: ["/dashboard/library"],
   SECURITY: ["/dashboard/cameras"],
   ACCOUNTANT: ["/dashboard/fees", "/dashboard/announcements"],
   STUDENT: [
@@ -30,6 +31,7 @@ const ROLE_PERMITTED_ROUTES: Record<string, string[]> = {
   ],
   PARENT: [
     "/dashboard",
+    "/dashboard/timetable",
     "/dashboard/attendance",
     "/dashboard/exams",
     "/dashboard/fees",
@@ -48,9 +50,20 @@ const ROLE_PERMITTED_ROUTES: Record<string, string[]> = {
     "/dashboard/documents",
     "/dashboard/printshop",
     "/dashboard/library",
-    "/dashboard/cameras",
   ],
-  MENTOR: [
+  LAB_FACULTY: [
+    "/dashboard",
+    "/dashboard/timetable",
+    "/dashboard/exams",
+    "/dashboard/attendance",
+    "/dashboard/facilities",
+    "/dashboard/announcements",
+    "/dashboard/leave",
+    "/dashboard/documents",
+    "/dashboard/printshop",
+    "/dashboard/library",
+  ],
+  CLASS_INCHARGE: [
     "/dashboard",
     "/dashboard/students",
     "/dashboard/timetable",
@@ -63,7 +76,22 @@ const ROLE_PERMITTED_ROUTES: Record<string, string[]> = {
     "/dashboard/documents",
     "/dashboard/printshop",
     "/dashboard/library",
-    "/dashboard/cameras",
+    "/dashboard/analytics",
+  ],
+  MENTOR: [
+    "/dashboard",
+    "/dashboard/students",
+    "/dashboard/mentorship",
+    "/dashboard/timetable",
+    "/dashboard/exams",
+    "/dashboard/assignments",
+    "/dashboard/attendance",
+    "/dashboard/facilities",
+    "/dashboard/announcements",
+    "/dashboard/leave",
+    "/dashboard/documents",
+    "/dashboard/printshop",
+    "/dashboard/library",
     "/dashboard/analytics",
   ],
   HOD: [
@@ -81,7 +109,6 @@ const ROLE_PERMITTED_ROUTES: Record<string, string[]> = {
     "/dashboard/documents",
     "/dashboard/printshop",
     "/dashboard/library",
-    "/dashboard/cameras",
     "/dashboard/analytics",
   ],
   PRINCIPAL: [
@@ -93,7 +120,6 @@ const ROLE_PERMITTED_ROUTES: Record<string, string[]> = {
     "/dashboard/assignments",
     "/dashboard/attendance",
     "/dashboard/fees",
-    "/dashboard/payroll",
     "/dashboard/facilities",
     "/dashboard/announcements",
     "/dashboard/leave",
@@ -119,12 +145,14 @@ export function DashboardLayout() {
         return;
       }
 
-      // Role route guard
-      const permitted = ROLE_PERMITTED_ROUTES[user.role];
+      const actingRole = user.active_role || user.role;
+
+      // Role route guard based strictly on active role (Section 2 & 14)
+      const permitted = ROLE_PERMITTED_ROUTES[actingRole];
       if (permitted && !permitted.includes("*")) {
         const currentPath = location.pathname.replace(/\/$/, "");
         if (!permitted.includes(currentPath)) {
-          const fallback = ROLE_DEFAULT_ROUTE[user.role] || "/dashboard";
+          const fallback = ROLE_DEFAULT_ROUTE[actingRole] || "/dashboard";
           navigate(fallback, { replace: true });
         }
       }

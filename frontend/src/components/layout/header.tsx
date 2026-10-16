@@ -15,6 +15,58 @@ interface NotificationItem {
   created_at: string;
 }
 
+function ParentWardSelector() {
+  const [wards, setWards] = useState<any[]>([]);
+  const [selectedWard, setSelectedWard] = useState<string>(
+    localStorage.getItem("campyteq_selected_ward_id") || ""
+  );
+
+  useEffect(() => {
+    apiRequest<any[]>("/parent/wards/")
+      .then((res) => {
+        const list = Array.isArray(res) ? res : (res as any)?.results || [];
+        setWards(list);
+        if (list.length > 0 && !selectedWard) {
+          const firstId = list[0]?.student_id || list[0]?.student?.id || list[0]?.id;
+          if (firstId) {
+            setSelectedWard(firstId);
+            localStorage.setItem("campyteq_selected_ward_id", firstId);
+          }
+        }
+      })
+      .catch((err) => console.error("Failed to load parent wards:", err));
+  }, []);
+
+  const handleSelect = (id: string) => {
+    setSelectedWard(id);
+    localStorage.setItem("campyteq_selected_ward_id", id);
+    window.dispatchEvent(new CustomEvent("parent_ward_changed", { detail: { wardId: id } }));
+  };
+
+  if (wards.length === 0) return <span className="text-[11px] text-muted-foreground">No linked ward</span>;
+
+  return (
+    <select
+      id="parent-ward-selector"
+      aria-label="Select Linked Ward"
+      value={selectedWard}
+      onChange={(e) => handleSelect(e.target.value)}
+      className="bg-transparent text-xs font-semibold text-emerald-300 focus:outline-none cursor-pointer"
+    >
+      {wards.map((w: any) => {
+        const sid = w?.student_id || w?.student?.id || w?.id;
+        const sname = w?.name || w?.student?.name || "Ward";
+        const sroll = w?.roll_number || w?.student?.roll_number || "";
+        return (
+          <option key={sid} value={sid} className="bg-card text-foreground">
+            {sname} {sroll ? `(${sroll})` : ""}
+          </option>
+        );
+      })}
+    </select>
+  );
+}
+
 export function Header() {
   const { user, logout, switchRole } = useAuth();
   const navigate = useNavigate();
@@ -104,35 +156,34 @@ export function Header() {
 
       {/* Right controls */}
       <div className="flex items-center gap-4">
-        {/* Faculty ⇄ Mentor Perspective Switcher */}
-        {user.role === "FACULTY" || user.role === "MENTOR" ? (
-          <div className="flex items-center bg-secondary/80 border border-indigo-500/30 p-0.5 rounded-lg text-xs shadow-inner">
-            <button
-              type="button"
-              id="switch-to-faculty-btn"
-              onClick={() => switchRole("FACULTY")}
-              className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                user.role === "FACULTY"
-                  ? "bg-indigo-600 text-white shadow"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+        {/* Parent Ward Selector */}
+        {(user.active_role || user.role) === "PARENT" && (
+          <div className="flex items-center gap-1.5 bg-secondary/80 border border-emerald-500/30 px-2 py-1 rounded-lg text-xs">
+            <span className="text-[11px] text-emerald-400 font-medium">Ward:</span>
+            <ParentWardSelector />
+          </div>
+        )}
+
+        {/* Dynamic Multi-Role Switcher (Section 2 & 14) */}
+        {user.available_roles && user.available_roles.filter(r => r.is_active).length > 1 ? (
+          <div className="flex items-center gap-1 bg-secondary/80 border border-indigo-500/40 px-2.5 py-1 rounded-lg text-xs shadow-inner">
+            <Shield className="h-3.5 w-3.5 text-indigo-400" />
+            <span className="text-[10px] text-muted-foreground mr-1 uppercase font-semibold">Active:</span>
+            <select
+              id="role-switcher-select"
+              aria-label="Active Role Switcher"
+              value={user.active_role || user.role}
+              onChange={(e) => switchRole(e.target.value)}
+              className="bg-transparent text-xs font-semibold text-indigo-300 focus:outline-none cursor-pointer"
             >
-              <span>👨‍🏫</span>
-              <span>Class Incharge</span>
-            </button>
-            <button
-              type="button"
-              id="switch-to-mentor-btn"
-              onClick={() => switchRole("MENTOR")}
-              className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                user.role === "MENTOR"
-                  ? "bg-purple-600 text-white shadow"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <span>🎯</span>
-              <span>Mentor</span>
-            </button>
+              {user.available_roles
+                .filter((r) => r.is_active)
+                .map((r) => (
+                  <option key={r.role} value={r.role} className="bg-card text-foreground">
+                    {r.role.replace("_", " ")} {r.source === "assignment" ? "(Assignment)" : ""}
+                  </option>
+                ))}
+            </select>
           </div>
         ) : (
           <Badge
@@ -140,7 +191,7 @@ export function Header() {
             className="text-xs bg-indigo-500/10 text-indigo-300 border-indigo-500/20 font-medium px-2.5 py-1"
           >
             <Shield className="h-3 w-3 mr-1 text-indigo-400 inline" />
-            {user.role.replace("_", " ")}
+            {(user.active_role || user.role).replace("_", " ")}
           </Badge>
         )}
 

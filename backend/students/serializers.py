@@ -103,9 +103,10 @@ class StudentSerializer(serializers.ModelSerializer):
         return 62.5 if seed % 3 == 0 else (78.4 if seed % 2 == 0 else 89.2)
 
     def get_cgpa(self, obj):
-        results = obj.results.all()
-        if results.exists():
-            avg_marks = results.aggregate(models.Avg('marks_obtained'))['marks_obtained__avg'] or 75.0
+        results = getattr(obj, 'exam_results', None)
+        if results is not None and results.exists():
+            from django.db.models import Avg
+            avg_marks = results.aggregate(Avg('marks_obtained'))['marks_obtained__avg'] or 75.0
             return round(float(avg_marks) / 10.0, 1)
         seed = sum(ord(c) for c in (obj.roll_number or "0"))
         return 6.8 if seed % 3 == 0 else (8.9 if seed % 2 == 0 else 8.4)
@@ -156,7 +157,7 @@ class StudentSerializer(serializers.ModelSerializer):
             return {
                 "mentor_name": active_assignment.mentor.user.get_full_name(),
                 "assigned_by": "Dr. Aruna Sundaram (HOD CSE)",
-                "assigned_date": str(active_assignment.assigned_date),
+                "assigned_date": str(getattr(active_assignment, 'assigned_on', obj.created_at.date())),
                 "status": "ACTIVE_MENTORSHIP",
                 "notes": active_assignment.notes or "Assigned by HOD for academic monitoring, career guidance, and attendance oversight."
             }
@@ -193,9 +194,11 @@ class MentorAssignmentSerializer(serializers.ModelSerializer):
             'student_name',
             'student_roll',
             'course_code',
-            'assigned_date',
+            'academic_year',
+            'assigned_on',
+            'ended_on',
             'is_active',
             'notes',
             'created_at',
         ]
-        read_only_fields = ['id', 'assigned_date', 'created_at']
+        read_only_fields = ['id', 'assigned_on', 'created_at']

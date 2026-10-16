@@ -8,7 +8,6 @@ from students.models import Student
 from departments.models import Department
 from academics.models import Course, Batch, Semester
 from printshop.models import PrintPricing, PrintOrder
-from library.models import Book, BookIssue
 from communication.models import Notification
 
 
@@ -167,91 +166,3 @@ class TestPrintShopAndLibraryWorkflow:
         self.client.force_authenticate(user=self.other_user)
         res = self.client.get(f"/api/v1/printshop/orders/{order.id}/")
         assert res.status_code in [403, 404]
-
-    def test_library_book_catalog_and_issue_decrement(self):
-        book = Book.objects.create(
-            college=self.college,
-            title="Introduction to Algorithms",
-            isbn="978-0262046305",
-            author="Thomas Cormen",
-            category="COMPUTER_SCIENCE",
-            total_copies=2,
-            available_copies=2,
-        )
-
-        # Library staff issues book to Rahul
-        self.client.force_authenticate(user=self.library_staff)
-        res = self.client.post("/api/v1/library/issues/", {
-            "book": book.id,
-            "user": self.student_user.id,
-            "student": self.student.id,
-            "remarks": "Coursework copy",
-        })
-        assert res.status_code == 201
-        book.refresh_from_db()
-        assert book.available_copies == 1
-
-        # Issue second copy
-        res = self.client.post("/api/v1/library/issues/", {
-            "book": book.id,
-            "user": self.student_user_2.id,
-        })
-        assert res.status_code == 201
-        book.refresh_from_db()
-        assert book.available_copies == 0
-
-        # Attempting to issue when 0 copies available fails with 400
-        res = self.client.post("/api/v1/library/issues/", {
-            "book": book.id,
-            "user": self.student_user.id,
-        })
-        assert res.status_code == 400
-        assert "book" in res.data.get("errors", res.data)
-
-    def test_library_book_return_and_overdue_fine_calculation(self):
-        book = Book.objects.create(
-            college=self.college,
-            title="Database System Concepts",
-            isbn="978-0078022159",
-            author="Abraham Silberschatz",
-            category="COMPUTER_SCIENCE",
-            total_copies=5,
-            available_copies=4,
-        )
-
-        # Create an issue that is 8 days overdue
-        past_issue_date = date.today() - timedelta(days=22)
-        past_due_date = date.today() - timedelta(days=8)
-        issue = BookIssue.objects.create(
-            college=self.college,
-            book=book,
-            user=self.student_user,
-            student=self.student,
-            issued_by=self.library_staff,
-            issue_date=past_issue_date,
-            due_date=past_due_date,
-            status=BookIssue.IssueStatus.ISSUED,
-        )
-
-        # Library staff marks book returned
-        self.client.force_authenticate(user=self.library_staff)
-        res = self.client.post(f"/api/v1/library/issues/{issue.id}/mark_return/", {
-            "fine_paid": True,
-            "remarks": "Paid fine at circulation desk.",
-        })
-        assert res.status_code == 200
-        assert res.data["status"] == "RETURNED"
-
-        # Fine: 8 days * ₹5.00 = ₹40.00
-        assert Decimal(str(res.data["fine_amount"])) == Decimal("40.00")
-        assert res.data["fine_paid"] is True
-
-        # Inventory incremented back to 5
-        book.refresh_from_db()
-        assert book.available_copies == 5
-
-        # Notification to student
-        assert Notification.objects.filter(
-            recipient=self.student_user,
-            title__contains="Library Return Confirmed",
-        ).exists()
