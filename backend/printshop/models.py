@@ -103,6 +103,8 @@ class PrintOrder(TenantModel):
         blank=True,
         related_name="handled_print_jobs",
     )
+    pickup_pin = models.CharField(max_length=4, blank=True, default="", help_text="4-digit pickup PIN for student verification")
+    failed_pin_attempts = models.PositiveSmallIntegerField(default=0)
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -113,6 +115,9 @@ class PrintOrder(TenantModel):
             date_prefix = timezone.now().strftime("%Y%m%d")
             short_id = uuid.uuid4().hex[:6].upper()
             self.order_number = f"PRT-{date_prefix}-{short_id}"
+        if not self.pickup_pin:
+            import random
+            self.pickup_pin = f"{random.randint(1000, 9999)}"
         super().save(*args, **kwargs)
 
     def calculate_cost(self, pricing: PrintPricing = None):

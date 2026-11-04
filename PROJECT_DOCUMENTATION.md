@@ -181,6 +181,7 @@ The CampyTeq operational lifecycle executes through a 4-tier pipeline across 6 c
 - **Operational Feasibility**: The user interface is designed with role-adaptive dashboards that present only the necessary controls for each role. Staff require minimal onboarding (under 30 minutes of orientation). Responsive CSS guarantees flawless rendering across desktop, tablet, and mobile browsers.
 - **Economic Feasibility**: By consolidating student admissions, attendance, fees, library approvals, facility bookings, and print shops into a single SaaS platform, institutions reduce third-party software licensing and maintenance costs by over 60% annually.
 - **Legal & Compliance Feasibility**: Full compliance with India's Digital Personal Data Protection (DPDP) Act 2023. Explicit guardian consent is tracked before student facial embedding extraction, and biometric data is stored as irreversible cryptographic vectors rather than raw images.
+  > **Statutory DPDP Act 2023 Legal Review Notice**: All institution-specific biometric enrollment consent wording, parent/guardian authorization forms for minors under 18, and data retention schedules must undergo formal review and approval by the institution's legal counsel or designated Data Protection Officer (DPO) prior to production deployment.
 
 ---
 
@@ -196,7 +197,7 @@ The CampyTeq operational lifecycle executes through a 4-tier pipeline across 6 c
 - **FR-07: Library Reservation Governance**: Library booking requests shall be decided exclusively by Library Faculty. Approval and rejection actions shall require mandatory timestamps and audit logging.
 - **FR-08: Parent-Ward Scoped Portal**: Verified parents shall access attendance, timetable, and marks for their linked children only. Requests for unlinked students shall return HTTP 404 (Not Found).
 - **FR-09: Fast-Print Queue**: Students shall upload print jobs. The system shall generate a secure 4-digit PIN for print shop staff redemption and queue tracking.
-- **FR-10: DPDP-Compliant Absent Student Finder**: Faculty shall search for absent students only during active class periods (+30 min margin) and only for students with verified biometric consent.
+- **FR-10: DPDP-Compliant Absent Student Finder**: Faculty shall search for absent students only during active class periods (+30 min margin) and only for students with verified biometric consent. Consent wording, withdrawal processing, and retention must be legally reviewed by the institution's DPO.
 
 ### 8.2 Non-Functional Requirements (NFR)
 - **NFR-01: Performance & Latency**: API endpoints shall deliver responses under 200ms at the 95th percentile under standard academic loads (up to 5,000 concurrent active users).

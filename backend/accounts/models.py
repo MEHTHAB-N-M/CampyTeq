@@ -9,6 +9,13 @@ class UserManager(BaseUserManager):
         if not email:
             raise ValueError('Email address is required')
         email = self.normalize_email(email)
+        role = extra_fields.get('role', 'STUDENT')
+        valid_roles = [
+            'SUPER_ADMIN', 'PRINCIPAL', 'HOD', 'FACULTY', 'LAB_FACULTY',
+            'ACCOUNTANT', 'LIBRARY_FACULTY', 'PRINT_STAFF', 'SECURITY', 'STUDENT', 'PARENT'
+        ]
+        if role and role not in valid_roles:
+            raise ValueError(f"Invalid role '{role}'. Role must be one of the 11 base roles.")
         user = self.model(email=email, **extra_fields)
         if password:
             user.set_password(password)
@@ -240,6 +247,14 @@ class AuditLog(models.Model):
             models.Index(fields=['action', 'timestamp']),
             models.Index(fields=['acting_role', 'timestamp']),
         ]
+
+    def delete(self, *args, **kwargs):
+        raise PermissionError("AuditLog records are append-only and strictly immutable.")
+
+    def save(self, *args, **kwargs):
+        if self.pk and AuditLog.objects.filter(pk=self.pk).exists():
+            raise PermissionError("AuditLog records are append-only and cannot be updated.")
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"[{self.timestamp}] {self.user or 'System'} ({self.acting_role or 'NoRole'}) - {self.action} on {self.resource_type}"

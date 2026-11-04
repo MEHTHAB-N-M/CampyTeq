@@ -2,11 +2,14 @@ import uuid
 from decimal import Decimal
 from django.db import transaction
 from django.db.models import Sum, Count, Q
+from django.core.exceptions import PermissionDenied
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from common.permissions import IsTenantMember
+from common.permissions import IsTenantMember, get_acting_role
+from accounts.models import AuditLog
+from students.models import Student, ParentWardLink
 from fees.models import FeeCategory, FeeStructure, StudentInvoice, Payment, PaymentReceipt
 from fees.serializers import (
     FeeCategorySerializer,
@@ -26,6 +29,9 @@ class FeeCategoryViewSet(viewsets.ModelViewSet):
         return FeeCategory.objects.filter(college=self.request.user.college)
 
     def perform_create(self, serializer):
+        acting_role = get_acting_role(self.request)
+        if acting_role not in ["ACCOUNTANT", "PRINCIPAL"]:
+            raise PermissionDenied("Only Accountants or Principal can create fee categories.")
         serializer.save(college=self.request.user.college)
 
 
@@ -40,6 +46,9 @@ class FeeStructureViewSet(viewsets.ModelViewSet):
         ).select_related("course", "batch")
 
     def perform_create(self, serializer):
+        acting_role = get_acting_role(self.request)
+        if acting_role not in ["ACCOUNTANT", "PRINCIPAL"]:
+            raise PermissionDenied("Only Accountants or Principal can configure fee structures.")
         serializer.save(college=self.request.user.college)
 
 
@@ -51,24 +60,88 @@ class StudentInvoiceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        if not user or not user.is_authenticated:
+            return StudentInvoice.objects.none()
+
+        acting_role = get_acting_role(self.request)
+        if acting_role == "SUPER_ADMIN":
+            return StudentInvoice.objects.none()
+
         qs = StudentInvoice.objects.filter(
             college=user.college
         ).select_related("student", "student__user", "student__department", "fee_structure")
 
-        if user.role == "STUDENT":
+        if acting_role == "STUDENT":
             if hasattr(user, "student_profile"):
                 return qs.filter(student=user.student_profile)
             return StudentInvoice.objects.none()
-        elif user.role == "PARENT":
-            from students.models import StudentGuardian
-            ward_ids = StudentGuardian.objects.filter(
-                guardian__user=user
+        elif acting_role == "PARENT":
+            ward_ids = ParentWardLink.objects.filter(
+                parent=user, is_verified=True, is_active=True, college=user.college
             ).values_list("student_id", flat=True)
             return qs.filter(student_id__in=ward_ids)
-        return qs
+        elif acting_role in ["ACCOUNTANT", "PRINCIPAL"]:
+            return qs
+
+        return StudentInvoice.objects.none()
 
     def perform_create(self, serializer):
+        acting_role = get_acting_role(self.request)
+        if acting_role not in ["ACCOUNTANT", "PRINCIPAL"]:
+            raise PermissionDenied("Only Accountants or Principal can issue invoices.")
         serializer.save(college=self.request.user.college)
+
+    @action(detail=True, methods=["post"])
+    def waive(self, request, pk=None):
+        """Allows Principal to grant a fee waiver on an invoice. Audited."""
+        user = request.user
+        acting_role = get_acting_role(request)
+        if acting_role != "PRINCIPAL":
+            return Response(
+                {"detail": "Only the Principal can grant fee waivers."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        invoice = self.get_object()
+        raw_amount = request.data.get("waiver_amount", 0)
+        reason = request.data.get("reason", "").strip()
+
+        try:
+            waiver_amount = Decimal(str(raw_amount))
+        except Exception:
+            return Response({"detail": "Invalid waiver amount format."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if waiver_amount <= Decimal("0.00"):
+            return Response({"detail": "Waiver amount must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+        if not reason:
+            return Response({"detail": "A reason is required to grant a fee waiver."}, status=status.HTTP_400_BAD_REQUEST)
+        if waiver_amount > invoice.balance_due:
+            return Response({"detail": f"Waiver amount (₹{waiver_amount}) exceeds remaining balance (₹{invoice.balance_due})."}, status=status.HTTP_400_BAD_REQUEST)
+
+        old_balance = invoice.balance_due
+        invoice.discount_amount += waiver_amount
+        invoice.recalculate_balance()
+        invoice.save()
+
+        ip_addr = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', '')).split(',')[0].strip()
+        AuditLog.objects.create(
+            college=invoice.college,
+            user=user,
+            acting_role=acting_role,
+            action='FEE_WAIVER_GRANTED',
+            resource_type='StudentInvoice',
+            resource_id=str(invoice.id),
+            ip_address=ip_addr,
+            old_values={'balance_due': str(old_balance)},
+            new_values={
+                'waiver_amount': str(waiver_amount),
+                'reason': reason,
+                'new_balance': str(invoice.balance_due),
+                'student_id': str(invoice.student_id),
+            }
+        )
+
+        return Response(StudentInvoiceSerializer(invoice).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"])
     def pay(self, request, pk=None):

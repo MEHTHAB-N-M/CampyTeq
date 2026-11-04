@@ -86,7 +86,7 @@ class ResultSerializer(serializers.ModelSerializer):
             'remarks',
             'created_at',
         ]
-        read_only_fields = ['id', 'grade', 'percentage', 'created_at']
+        read_only_fields = ['id', 'percentage', 'created_at']
 
     def get_percentage(self, obj):
         if obj.is_absent or not obj.exam_subject.maximum_marks:

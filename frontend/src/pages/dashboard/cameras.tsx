@@ -98,23 +98,29 @@ interface StudentLastSeenResult {
     student_number: string;
     roll_number: string;
     full_name: string;
-    email: string;
-    department: string | null;
-    batch: string | null;
-    status: string;
+    email?: string;
+    department?: string | null;
+    batch?: string | null;
+    status?: string;
   };
-  latest_location: {
+  last_seen?: {
     zone_name: string;
     zone_code: string;
     building: string;
     floor: number;
-    camera_code: string;
-    camera_name: string;
     detected_at: string;
-    confidence_score: string | number;
+    time_display: string;
   } | null;
-  trajectory_history: DetectionEventItem[];
-  total_sightings_48h: number;
+  latest_location?: {
+    zone_name: string;
+    zone_code: string;
+    building: string;
+    floor: number;
+    camera_code?: string;
+    camera_name?: string;
+    detected_at: string;
+    confidence_score?: string | number;
+  } | null;
   disclaimer: string;
 }
 
@@ -299,8 +305,9 @@ export default function CamerasAndTrackingPage() {
     return true;
   });
 
-  const isSecurityOrAdmin = ["SUPER_ADMIN", "PRINCIPAL", "HOD", "SECURITY"].includes(user?.role || "");
-  const canSearchStudents = user?.role !== "SECURITY" && ["SUPER_ADMIN", "PRINCIPAL", "HOD", "MENTOR", "FACULTY"].includes(user?.role || "");
+  const activeRole = user?.active_role || user?.role || "";
+  const isSecurityOrAdmin = ["SUPER_ADMIN", "PRINCIPAL", "HOD", "SECURITY"].includes(activeRole);
+  const canSearchStudents = ["FACULTY", "CLASS_INCHARGE", "HOD"].includes(activeRole);
 
   return (
     <div className="p-6 md:p-8 space-y-8 max-w-7xl mx-auto">
@@ -797,11 +804,8 @@ export default function CamerasAndTrackingPage() {
 
                   <div className="text-right">
                     <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 px-3 py-1 text-xs uppercase font-bold tracking-wider">
-                      ● Active Campus Presence
+                      ● Last Sighting Registered
                     </Badge>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {trackingResult.total_sightings_48h} detections recorded in past 48h
-                    </p>
                   </div>
                 </div>
 
@@ -812,125 +816,76 @@ export default function CamerasAndTrackingPage() {
                     Last Detected Stationary Camera Sighting
                   </div>
 
-                  {trackingResult.latest_location ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-background/80 p-5 rounded-xl border border-border/80">
-                      <div>
-                        <div className="text-xs text-muted-foreground">Monitored Zone</div>
-                        <div className="text-base font-bold text-foreground mt-0.5">
-                          {trackingResult.latest_location.zone_name}
-                        </div>
-                        <div className="text-xs text-emerald-500 font-mono">
-                          {trackingResult.latest_location.zone_code}
-                        </div>
-                      </div>
+                  {(trackingResult.last_seen || trackingResult.latest_location) ? (
+                    (() => {
+                      const loc = (trackingResult.last_seen || trackingResult.latest_location)!;
+                      return (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-background/80 p-5 rounded-xl border border-border/80">
+                          <div>
+                            <div className="text-xs text-muted-foreground">Monitored Zone</div>
+                            <div className="text-base font-bold text-foreground mt-0.5">
+                              {loc.zone_name}
+                            </div>
+                            <div className="text-xs text-emerald-500 font-mono">
+                              {loc.zone_code}
+                            </div>
+                          </div>
 
-                      <div>
-                        <div className="text-xs text-muted-foreground">Building & Floor</div>
-                        <div className="text-base font-bold text-foreground mt-0.5">
-                          {trackingResult.latest_location.building}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          Floor {trackingResult.latest_location.floor}
-                        </div>
-                      </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">Building & Floor</div>
+                            <div className="text-base font-bold text-foreground mt-0.5">
+                              {loc.building}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              Floor {loc.floor}
+                            </div>
+                          </div>
 
-                      <div>
-                        <div className="text-xs text-muted-foreground">Sighting Timestamp</div>
-                        <div className="text-base font-bold text-foreground mt-0.5 font-mono">
-                          {new Date(trackingResult.latest_location.detected_at).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            second: "2-digit",
-                          })}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {new Date(trackingResult.latest_location.detected_at).toLocaleDateString()}
-                        </div>
-                      </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">Sighting Timestamp</div>
+                            <div className="text-base font-bold text-foreground mt-0.5 font-mono">
+                              {new Date(loc.detected_at).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                              })}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {new Date(loc.detected_at).toLocaleDateString()}
+                            </div>
+                          </div>
 
-                      <div>
-                        <div className="text-xs text-muted-foreground">Detection Confidence</div>
-                        <div className="text-base font-bold text-emerald-500 mt-0.5">
-                          {(Number(trackingResult.latest_location.confidence_score) * 100).toFixed(1)}%
+                          <div>
+                            <div className="text-xs text-muted-foreground">Access Privacy Mode</div>
+                            <div className="text-base font-bold text-emerald-500 mt-0.5">
+                              DPDP 2023 Verified
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              Last Zone Sighting Only
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-xs text-muted-foreground">
-                          Camera: {trackingResult.latest_location.camera_code}
-                        </div>
-                      </div>
-                    </div>
+                      );
+                    })()
                   ) : (
                     <div className="p-6 text-center text-muted-foreground text-sm">
-                      No stationary detections recorded for this student in the past 48 hours.
+                      No stationary detections recorded for this student in the past 24 hours.
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Trajectory Timeline */}
-              <div className="p-5 rounded-xl border border-border/60 bg-card/60 backdrop-blur-sm space-y-4">
-                <div>
-                  <h3 className="text-base font-bold text-foreground flex items-center gap-2">
-                    <History className="w-4 h-4 text-primary" />
-                    Chronological Detection Breadcrumb Trajectory (Past 48h)
+              {/* DPDP Act 2023 Statutory Notice */}
+              <div className="p-5 rounded-xl border border-border/60 bg-card/60 backdrop-blur-sm space-y-2">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                  <h3 className="text-sm font-bold text-foreground">
+                    DPDP Act 2023 Statutory Privacy Compliance
                   </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Sequential camera transit sightings verified by institutional edge face recognition.
-                  </p>
                 </div>
-
-                <div className="relative border-l-2 border-primary/30 ml-4 space-y-6 py-2">
-                  {trackingResult.trajectory_history.map((item, idx) => {
-                    const isLatest = idx === 0;
-                    const timeStr = new Date(item.detected_at).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    });
-
-                    return (
-                      <div key={item.id} className="relative pl-6">
-                        <div
-                          className={`absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 ${
-                            isLatest
-                              ? "bg-emerald-500 border-background shadow-[0_0_8px_rgba(16,185,129,0.6)]"
-                              : "bg-card border-primary/50"
-                          }`}
-                        />
-
-                        <div className="bg-card/90 p-4 rounded-xl border border-border/70 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-sm font-bold text-foreground">{timeStr}</span>
-                              <Badge variant="outline" className="text-[11px] font-mono">
-                                {item.zone_code}
-                              </Badge>
-                              {isLatest && (
-                                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px]">
-                                  Current Last Seen
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-sm font-semibold text-foreground mt-1">{item.zone_name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {item.building} (Flr {item.floor}) • Camera: {item.camera_code}
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-4 text-xs">
-                            <div className="text-right">
-                              <span className="text-muted-foreground">Confidence: </span>
-                              <span className="font-mono font-semibold text-emerald-500">
-                                {(Number(item.confidence_score) * 100).toFixed(1)}%
-                              </span>
-                            </div>
-                            <Badge variant="outline" className="text-[10px] uppercase text-muted-foreground">
-                              {item.event_type.replace("_", " ")}
-                            </Badge>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <p className="text-xs text-muted-foreground">
+                  In compliance with the Digital Personal Data Protection (DPDP) Act 2023, continuous live tracking and movement breadcrumbs are strictly prohibited. The absent-student locator returns the single verified stationary zone and sighting timestamp only.
+                </p>
               </div>
             </div>
           )}

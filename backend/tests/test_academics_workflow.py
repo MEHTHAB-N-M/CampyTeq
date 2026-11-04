@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 from colleges.models import College
 from accounts.models import User
 from departments.models import Department
-from academics.models import Course, Batch, Semester, Subject, TimetableEntry
+from academics.models import Course, Batch, Semester, Subject, TimetableEntry, FacultySubject
 from faculty.models import Faculty
 from students.models import Student
 from exams.models import Exam, ExamSubject, Result
@@ -55,6 +55,13 @@ class TestAcademicsWorkflow:
         self.subject = Subject.objects.create(
             college=self.college, department=self.dept, course=self.course,
             name="Data Structures", code="CS101", credits=4, semester_number=1
+        )
+        FacultySubject.objects.create(
+            college=self.college,
+            faculty=self.faculty,
+            subject=self.subject,
+            batch=self.batch,
+            academic_year="2026-2027"
         )
 
     def test_timetable_today_endpoint(self):

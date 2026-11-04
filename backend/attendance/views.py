@@ -1,11 +1,13 @@
 from datetime import datetime, date
 from django.db.models import Count, Q, F
 from django.utils import timezone
+from django.core.exceptions import PermissionDenied
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from common.permissions import IsTenantMember
+from common.permissions import IsTenantMember, get_acting_role
+from accounts.models import AuditLog
 from attendance.models import AttendanceSession, StudentAttendance, FacultyAttendance
 from attendance.serializers import (
     AttendanceSessionSerializer,
@@ -15,8 +17,28 @@ from attendance.serializers import (
     FacultyAttendanceSerializer,
     FacultyPunchSerializer,
 )
-from students.models import Student
-from academics.models import Subject
+from students.models import Student, ParentWardLink, MentorAssignment
+from academics.models import Subject, SubjectAssignment, FacultySubject, ClassIncharge
+
+
+def is_faculty_assigned_to_subject(faculty, subject):
+    """Checks if a faculty is assigned to the subject via SubjectAssignment or FacultySubject."""
+    today = timezone.now().date()
+    has_sa = SubjectAssignment.objects.filter(
+        faculty=faculty,
+        subject=subject,
+        is_active=True,
+    ).filter(
+        Q(end_date__isnull=True) | Q(end_date__gte=today)
+    ).exists()
+    if has_sa:
+        return True
+
+    has_fs = FacultySubject.objects.filter(
+        faculty=faculty,
+        subject=subject,
+    ).exists()
+    return has_fs
 
 
 class AttendanceSessionViewSet(viewsets.ModelViewSet):
@@ -26,20 +48,48 @@ class AttendanceSessionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        if not user or not user.is_authenticated:
+            return AttendanceSession.objects.none()
+
+        acting_role = get_acting_role(self.request)
+        if acting_role == "SUPER_ADMIN":
+            return AttendanceSession.objects.none()
+
         qs = AttendanceSession.objects.filter(
             college=user.college
         ).select_related("subject", "semester", "faculty", "faculty__user")
 
-        if user.role == "STUDENT":
+        if acting_role == "STUDENT":
             if hasattr(user, "student_profile"):
-                qs = qs.filter(semester=user.student_profile.current_semester)
-            else:
-                return AttendanceSession.objects.none()
-        elif user.role == "FACULTY":
-            # Lab Faculty: strictly restrict to Lab sessions
+                return qs.filter(semester=user.student_profile.current_semester)
+            return AttendanceSession.objects.none()
+        elif acting_role == "PARENT":
+            ward_sem_ids = ParentWardLink.objects.filter(
+                parent=user, is_verified=True, is_active=True, college=user.college
+            ).values_list("student__current_semester_id", flat=True)
+            return qs.filter(semester_id__in=ward_sem_ids)
+        elif acting_role == "LAB_FACULTY":
             qs = qs.filter(session_type="LAB")
             if hasattr(user, "faculty_profile"):
-                qs = qs.filter(faculty=user.faculty_profile)
+                return qs.filter(faculty=user.faculty_profile)
+            return AttendanceSession.objects.none()
+        elif acting_role == "FACULTY":
+            if hasattr(user, "faculty_profile"):
+                return qs.filter(faculty=user.faculty_profile)
+            return AttendanceSession.objects.none()
+        elif acting_role == "CLASS_INCHARGE":
+            faculty_profile = getattr(user, "faculty_profile", None)
+            if faculty_profile:
+                incharge_batch_ids = ClassIncharge.objects.filter(
+                    faculty=faculty_profile, is_active=True
+                ).values_list("class_section__batch_id", flat=True)
+                return qs.filter(semester__batch_id__in=incharge_batch_ids)
+            return AttendanceSession.objects.none()
+        elif acting_role == "HOD":
+            faculty_profile = getattr(user, "faculty_profile", None)
+            if faculty_profile and faculty_profile.department:
+                return qs.filter(subject__department=faculty_profile.department)
+
         return qs
 
     def get_serializer_class(self):
@@ -49,15 +99,30 @@ class AttendanceSessionViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        faculty = serializer.validated_data.get("faculty")
-        if not faculty and hasattr(user, "faculty_profile"):
-            faculty = user.faculty_profile
-        
-        # Restrict Lab Faculty to creating only LAB sessions
-        if user.role == "FACULTY":
+        acting_role = get_acting_role(self.request)
+        subject = serializer.validated_data.get("subject")
+        faculty = serializer.validated_data.get("faculty") or getattr(user, "faculty_profile", None)
+
+        if acting_role == "SUPER_ADMIN":
+            raise PermissionDenied("Super Administrators do not create attendance sessions.")
+
+        if acting_role == "LAB_FACULTY":
+            if not faculty or not is_faculty_assigned_to_subject(faculty, subject):
+                raise PermissionDenied("Only assigned lab faculty can create practical attendance sessions.")
             serializer.save(college=user.college, faculty=faculty, session_type="LAB")
-        else:
+        elif acting_role == "FACULTY":
+            if not faculty or not is_faculty_assigned_to_subject(faculty, subject):
+                raise PermissionDenied("Only the assigned subject faculty or active substitute can create attendance sessions.")
             serializer.save(college=user.college, faculty=faculty)
+        elif acting_role == "HOD":
+            faculty_profile = getattr(user, "faculty_profile", None)
+            if not faculty_profile or subject.department_id != faculty_profile.department_id:
+                raise PermissionDenied("HOD can only create attendance sessions for subjects in their department.")
+            serializer.save(college=user.college, faculty=faculty or faculty_profile)
+        elif acting_role == "PRINCIPAL":
+            serializer.save(college=user.college, faculty=faculty or getattr(user, "faculty_profile", None))
+        else:
+            raise PermissionDenied("You do not have permission to create attendance sessions.")
 
     @action(detail=True, methods=["get"])
     def roster(self, request, pk=None):
@@ -88,8 +153,23 @@ class AttendanceSessionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def mark_bulk(self, request, pk=None):
-        """Allows faculty to mark attendance for all students in one request."""
+        """Allows assigned faculty (or active substitute) to mark/update attendance for all students in one request."""
         session = self.get_object()
+        acting_role = get_acting_role(request)
+        faculty_profile = getattr(request.user, "faculty_profile", None)
+
+        # Authorization: assigned subject faculty (or active substitute), HOD in dept, or Principal
+        if acting_role in ["FACULTY", "LAB_FACULTY"]:
+            if not faculty_profile or not is_faculty_assigned_to_subject(faculty_profile, session.subject):
+                raise PermissionDenied("Only the assigned subject faculty or active substitute can mark attendance.")
+        elif acting_role == "HOD":
+            if not faculty_profile or session.subject.department_id != faculty_profile.department_id:
+                raise PermissionDenied("HOD can only mark attendance for subjects in their department.")
+        elif acting_role == "PRINCIPAL":
+            pass
+        else:
+            raise PermissionDenied("You do not have permission to mark attendance.")
+
         serializer = BulkMarkAttendanceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -101,6 +181,8 @@ class AttendanceSessionViewSet(viewsets.ModelViewSet):
             att.student_id: att for att in session.student_attendances.all()
         }
 
+        ip_addr = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")).split(",")[0].strip()
+
         for item in attendances_data:
             student_id = item["student_id"]
             new_status = item["status"]
@@ -108,6 +190,19 @@ class AttendanceSessionViewSet(viewsets.ModelViewSet):
 
             if student_id in existing_records:
                 record = existing_records[student_id]
+                if record.status != new_status:
+                    # Audit override
+                    AuditLog.objects.create(
+                        college=session.college,
+                        user=request.user,
+                        acting_role=acting_role,
+                        action="ATTENDANCE_OVERRIDDEN",
+                        resource_type="StudentAttendance",
+                        resource_id=str(record.id),
+                        ip_address=ip_addr,
+                        old_values={"status": record.status, "student_id": str(student_id)},
+                        new_values={"status": new_status, "remarks": remarks},
+                    )
                 record.status = new_status
                 record.remarks = remarks
                 record.marked_by = request.user
@@ -145,43 +240,80 @@ class StudentAttendanceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        if not user or not user.is_authenticated:
+            return StudentAttendance.objects.none()
+
+        acting_role = get_acting_role(self.request)
+        if acting_role == "SUPER_ADMIN":
+            return StudentAttendance.objects.none()
+
         qs = StudentAttendance.objects.filter(
             college=user.college
         ).select_related(
             "session", "session__subject", "student", "student__user", "marked_by"
         )
 
-        if user.role == "STUDENT":
+        if acting_role == "STUDENT":
             if hasattr(user, "student_profile"):
                 return qs.filter(student=user.student_profile)
             return StudentAttendance.objects.none()
-        elif user.role == "PARENT":
-            from students.models import StudentGuardian
-            ward_ids = StudentGuardian.objects.filter(
-                guardian__user=user
+        elif acting_role == "PARENT":
+            ward_ids = ParentWardLink.objects.filter(
+                parent=user, is_verified=True, is_active=True, college=user.college
             ).values_list("student_id", flat=True)
             return qs.filter(student_id__in=ward_ids)
-        elif user.role == "MENTOR":
+        elif acting_role == "MENTOR":
             if hasattr(user, "faculty_profile"):
-                from students.models import MentorAssignment
                 assigned_student_ids = MentorAssignment.objects.filter(
                     mentor=user.faculty_profile, is_active=True
                 ).values_list("student_id", flat=True)
                 return qs.filter(student_id__in=assigned_student_ids)
             return StudentAttendance.objects.none()
+        elif acting_role == "CLASS_INCHARGE":
+            if hasattr(user, "faculty_profile"):
+                incharge_batch_ids = ClassIncharge.objects.filter(
+                    faculty=user.faculty_profile, is_active=True
+                ).values_list("class_section__batch_id", flat=True)
+                return qs.filter(student__batch_id__in=incharge_batch_ids)
+            return StudentAttendance.objects.none()
+        elif acting_role in ["FACULTY", "LAB_FACULTY"]:
+            if hasattr(user, "faculty_profile"):
+                return qs.filter(session__faculty=user.faculty_profile)
+            return StudentAttendance.objects.none()
+        elif acting_role == "HOD":
+            if hasattr(user, "faculty_profile") and user.faculty_profile.department:
+                return qs.filter(student__department=user.faculty_profile.department)
+
         return qs
 
     @action(detail=False, methods=["get"])
     def summary(self, request):
         """Returns subject-wise and overall attendance percentage for a student."""
         user = request.user
+        acting_role = get_acting_role(request)
         student_id = request.query_params.get("student_id")
 
-        if user.role == "STUDENT":
+        if acting_role == "SUPER_ADMIN":
+            raise PermissionDenied("Super Administrators do not have access to student attendance data.")
+
+        if acting_role == "STUDENT":
             if hasattr(user, "student_profile"):
                 student = user.student_profile
             else:
                 return Response({"error": "Student profile not found"}, status=status.HTTP_404_NOT_FOUND)
+        elif acting_role == "PARENT":
+            if not student_id:
+                return Response({"error": "student_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            # Rule 8: Parent requesting unlinked student ID gets 404, never 403
+            is_linked = ParentWardLink.objects.filter(
+                parent=user, student_id=student_id, is_verified=True, is_active=True, college=user.college
+            ).exists()
+            if not is_linked:
+                return Response({"error": "Ward not found or unverified"}, status=status.HTTP_404_NOT_FOUND)
+            try:
+                student = Student.objects.get(id=student_id, college=user.college)
+            except Student.DoesNotExist:
+                return Response({"error": "Student not found"}, status=status.HTTP_404_NOT_FOUND)
         elif student_id:
             try:
                 student = Student.objects.get(id=student_id, college=user.college)
@@ -193,7 +325,7 @@ class StudentAttendanceViewSet(viewsets.ModelViewSet):
         # Calculate attendance per subject
         subjects = Subject.objects.filter(
             course=student.course,
-            semester_number=student.current_semester.semester_number,
+            semester_number=student.current_semester.semester_number if student.current_semester else 1,
             college=student.college,
         )
 
@@ -250,16 +382,27 @@ class StudentAttendanceViewSet(viewsets.ModelViewSet):
     def defaulters(self, request):
         """Returns list of students with overall attendance below 75%."""
         user = request.user
+        acting_role = get_acting_role(request)
+
+        if acting_role == "SUPER_ADMIN":
+            raise PermissionDenied("Super Administrators do not have access to defaulter lists.")
+
         students_qs = Student.objects.filter(
             college=user.college, status="ACTIVE"
         ).select_related("user", "department", "current_semester", "mentor", "mentor__user")
 
-        if user.role == "MENTOR" and hasattr(user, "faculty_profile"):
-            from students.models import MentorAssignment
+        if acting_role == "MENTOR" and hasattr(user, "faculty_profile"):
             assigned_student_ids = MentorAssignment.objects.filter(
                 mentor=user.faculty_profile, is_active=True
             ).values_list("student_id", flat=True)
             students_qs = students_qs.filter(id__in=assigned_student_ids)
+        elif acting_role == "CLASS_INCHARGE" and hasattr(user, "faculty_profile"):
+            incharge_batch_ids = ClassIncharge.objects.filter(
+                faculty=user.faculty_profile, is_active=True
+            ).values_list("class_section__batch_id", flat=True)
+            students_qs = students_qs.filter(batch_id__in=incharge_batch_ids)
+        elif acting_role == "HOD" and hasattr(user, "faculty_profile") and user.faculty_profile.department:
+            students_qs = students_qs.filter(department=user.faculty_profile.department)
 
         defaulters_list = []
         for s in students_qs:
@@ -295,6 +438,7 @@ class StudentAttendanceViewSet(viewsets.ModelViewSet):
         return Response(defaulters_list)
 
 
+
 class FacultyAttendanceViewSet(viewsets.ModelViewSet):
     serializer_class = FacultyAttendanceSerializer
     permission_classes = [permissions.IsAuthenticated, IsTenantMember]
@@ -306,7 +450,8 @@ class FacultyAttendanceViewSet(viewsets.ModelViewSet):
             college=user.college
         ).select_related("faculty", "faculty__user", "faculty__department")
 
-        if user.role == "FACULTY":
+        acting_role = get_acting_role(self.request)
+        if acting_role in ["FACULTY", "LAB_FACULTY"]:
             if hasattr(user, "faculty_profile"):
                 return qs.filter(faculty=user.faculty_profile)
             return FacultyAttendance.objects.none()

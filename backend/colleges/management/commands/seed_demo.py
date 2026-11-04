@@ -92,15 +92,18 @@ class Command(BaseCommand):
 
         # 3. Roles
         role_definitions = {
+            "SUPER_ADMIN": ("Super Admin", ["colleges.manage"]),
             "PRINCIPAL": ("Principal", list(permission_objs.keys())),
             "HOD": ("Head of Department", ["student.view", "student.update", "attendance.view", "attendance.mark", "academics.view", "academics.manage", "camera.view", "tracking.search"]),
             "MENTOR": ("Mentor", ["student.view", "attendance.view", "academics.view", "camera.view", "tracking.search", "print.create", "library.view"]),
             "FACULTY": ("Faculty", ["student.view", "attendance.view", "attendance.mark", "print.create"]),
+            "LAB_FACULTY": ("Lab Faculty", ["student.view", "attendance.view", "attendance.mark", "print.create"]),
             "ACCOUNTANT": ("Accountant", ["fees.view", "fees.create", "fees.update", "payments.record", "print.create"]),
             "STUDENT": ("Student", ["attendance.view", "academics.view", "fees.view", "print.create", "library.view"]),
             "PARENT": ("Parent/Guardian", ["student.view", "attendance.view", "academics.view", "fees.view"]),
             "PRINT_STAFF": ("Print Shop Staff", ["print.create", "print.manage"]),
-            "LIBRARY_STAFF": ("Library Staff", ["library.view", "library.issue", "print.create"]),
+            "LIBRARY_FACULTY": ("Library Faculty", ["library.view", "library.issue", "print.create"]),
+            "SECURITY": ("Security Administrator", ["camera.view"]),
         }
 
         for role_code, (role_name, perm_codes) in role_definitions.items():

@@ -13,14 +13,16 @@ export default function DashboardPage() {
 
   if (!user) return null;
 
-  if (user.role === "HOD" || user.email?.toLowerCase().includes("hod")) {
+  const activeRole = user.active_role || user.role;
+
+  if (activeRole === "HOD" || user.email?.toLowerCase().includes("hod")) {
     return <AdminDashboard />;
   }
 
-  switch (user.role) {
+  switch (activeRole) {
     case "PRINT_STAFF":
       return <Navigate to="/dashboard/printshop" replace />;
-    case "LIBRARY_STAFF":
+    case "LIBRARY_FACULTY":
       return <Navigate to="/dashboard/library" replace />;
     case "SECURITY":
       return <Navigate to="/dashboard/cameras" replace />;

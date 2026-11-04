@@ -47,10 +47,19 @@ class PrintOrderSerializer(serializers.ModelSerializer):
             "status",
             "handled_by",
             "handled_by_name",
+            "pickup_pin",
+            "failed_pin_attempts",
             "created_at",
             "completed_at",
         ]
-        read_only_fields = ["id", "order_number", "user", "handled_by", "created_at", "completed_at"]
+        read_only_fields = ["id", "order_number", "user", "handled_by", "pickup_pin", "failed_pin_attempts", "created_at", "completed_at"]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        if request and request.user.id != instance.user_id and getattr(request.user, "active_role", None) != "SUPER_ADMIN":
+            data.pop("pickup_pin", None)
+        return data
 
 
 class PrintOrderCreateSerializer(serializers.ModelSerializer):
@@ -72,13 +81,15 @@ class PrintOrderCreateSerializer(serializers.ModelSerializer):
             "payment_status",
             "total_amount",
             "status",
+            "pickup_pin",
+            "failed_pin_attempts",
             "created_at",
         ]
-        read_only_fields = ["id", "order_number", "total_amount", "status", "created_at"]
+        read_only_fields = ["id", "order_number", "total_amount", "status", "pickup_pin", "failed_pin_attempts", "created_at"]
 
     def create(self, validated_data):
-        user = self.context["request"].user
-        college = user.college
+        user = validated_data.pop("user", None) or self.context["request"].user
+        college = validated_data.pop("college", None) or user.college
 
         # Instance to calculate price
         order = PrintOrder(

@@ -24,133 +24,63 @@ import {
   BarChart3,
   ExternalLink,
 } from "lucide-react";
-import { useAuth } from "@/lib/auth";
+import { useAuth, ModuleItem } from "@/lib/auth";
+import { apiRequest } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+
+const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  LayoutDashboard,
+  GraduationCap,
+  Users,
+  CalendarCheck,
+  FileSpreadsheet,
+  FileText,
+  CreditCard,
+  Building,
+  Building2,
+  Megaphone,
+  CalendarX,
+  FileCheck2,
+  Printer,
+  Library,
+  Video,
+  BarChart3,
+  ShieldCheck,
+  Settings,
+};
 
 export function Sidebar() {
   const { pathname } = useLocation();
   const { user, logout } = useAuth();
+  const [backendModules, setBackendModules] = React.useState<ModuleItem[]>(user?.modules || []);
+
+  const role = user?.active_role || user?.role || "";
+
+  React.useEffect(() => {
+    if (user?.modules && user.modules.length > 0) {
+      setBackendModules(user.modules);
+    } else if (user) {
+      apiRequest("/accounts/me/modules/")
+        .then((res) => {
+          if (res?.modules && Array.isArray(res.modules)) {
+            setBackendModules(res.modules);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [user, role]);
 
   if (!user) return null;
 
-  const role = user.active_role || user.role;
-
-  // Build navigation items according to active role (Section 11 & 14 spec)
-  const navItems = [
-    {
-      title: role === "PARENT" ? "Ward Dashboard" : "Dashboard",
-      href: "/dashboard",
-      icon: LayoutDashboard,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "MENTOR", "STUDENT", "PARENT"],
-    },
-    {
-      title: "Mentees (360° Profile)",
-      href: "/dashboard/mentorship",
-      icon: GraduationCap,
-      roles: ["MENTOR", "PRINCIPAL", "SUPER_ADMIN"],
-    },
-    {
-      title: "Students",
-      href: "/dashboard/students",
-      icon: GraduationCap,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "CLASS_INCHARGE", "FACULTY"],
-    },
-    {
-      title: "Faculty & Staff",
-      href: "/dashboard/faculty",
-      icon: Users,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD"],
-    },
-    {
-      title: ["HOD", "PRINCIPAL", "SUPER_ADMIN"].includes(role) ? "Create & Manage Timetable" : "Timetable",
-      href: "/dashboard/timetable",
-      icon: CalendarCheck,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "STUDENT", "PARENT"],
-    },
-    {
-      title: role === "PARENT" ? "Ward Marks & Results" : "Exams & Results",
-      href: "/dashboard/exams",
-      icon: FileSpreadsheet,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "STUDENT", "PARENT"],
-    },
-    {
-      title: "Assignments",
-      href: "/dashboard/assignments",
-      icon: FileText,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "STUDENT"],
-    },
-    {
-      title: role === "PARENT" ? "Ward Attendance" : "Attendance",
-      href: "/dashboard/attendance",
-      icon: CalendarCheck,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "STUDENT", "PARENT"],
-    },
-    {
-      title: role === "PARENT" ? "Fee Ledger & Receipts" : "Fees & Invoices",
-      href: "/dashboard/fees",
-      icon: CreditCard,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "ACCOUNTANT", "STUDENT", "PARENT"],
-    },
-    {
-      title: "Facility Bookings",
-      href: "/dashboard/facilities",
-      icon: Building,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "MENTOR"],
-    },
-    {
-      title: "Announcements",
-      href: "/dashboard/announcements",
-      icon: Megaphone,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "STUDENT", "PARENT", "ACCOUNTANT"],
-    },
-    {
-      title: "Leave Requests",
-      href: "/dashboard/leave",
-      icon: CalendarX,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "STUDENT"],
-    },
-    {
-      title: "Documents & Notes",
-      href: "/dashboard/documents",
-      icon: FileCheck2,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "STUDENT"],
-    },
-    {
-      title: "Campus Print Shop",
-      href: "/dashboard/printshop",
-      icon: Printer,
-      roles: ["PRINT_STAFF", "STUDENT", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "HOD"],
-    },
-    {
-      title: "Library Bookings",
-      href: "/dashboard/library",
-      icon: Library,
-      roles: ["LIBRARY_FACULTY", "PRINCIPAL", "HOD", "FACULTY", "LAB_FACULTY", "CLASS_INCHARGE", "MENTOR"],
-    },
-    {
-      title: "Authorized Cameras",
-      href: "/dashboard/cameras",
-      icon: Video,
-      roles: ["SECURITY", "SUPER_ADMIN", "PRINCIPAL"],
-    },
-    {
-      title: "Analytics & AI Radar",
-      href: "/dashboard/analytics",
-      icon: BarChart3,
-      roles: ["SUPER_ADMIN", "PRINCIPAL", "HOD", "CLASS_INCHARGE", "MENTOR"],
-    },
-    {
-      title: "Audit Logs",
-      href: "/dashboard/audit",
-      icon: ShieldCheck,
-      roles: ["SUPER_ADMIN", "PRINCIPAL"],
-    },
-  ];
-
-  const filteredNav = navItems.filter((item) => {
-    return item.roles.includes(role);
-  });
+  // Render navigation strictly driven by backend-permitted modules
+  const filteredNav = backendModules.map((mod) => ({
+    title: mod.title,
+    href: mod.href,
+    icon: ICON_MAP[mod.icon] || LayoutDashboard,
+    badge: mod.badge,
+    actions: mod.actions,
+  }));
 
   return (
     <aside className="w-64 border-r border-border bg-card/60 backdrop-blur-xl flex flex-col justify-between h-screen sticky top-0">

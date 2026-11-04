@@ -139,13 +139,13 @@ export function Header() {
           <input
             type="text"
             placeholder={
-              user.role === "PRINT_STAFF"
+              (user.active_role || user.role) === "PRINT_STAFF"
                 ? "Search print orders, pickup PINs..."
-                : user.role === "LIBRARY_STAFF"
+                : (user.active_role || user.role) === "LIBRARY_FACULTY"
                 ? "Search books, authors, ISBNs..."
-                : user.role === "SECURITY"
+                : (user.active_role || user.role) === "SECURITY"
                 ? "Search camera zones, student sighting ID..."
-                : user.role === "ACCOUNTANT"
+                : (user.active_role || user.role) === "ACCOUNTANT"
                 ? "Search student invoices, roll numbers..."
                 : "Search students, faculty, circulars, roll numbers..."
             }

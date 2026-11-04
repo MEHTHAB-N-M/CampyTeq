@@ -30,7 +30,7 @@ class TestAnalyticsAndAIWorkflow:
             email="principal@apex.edu", password="Password123!", role="PRINCIPAL", college=self.college, first_name="Rajesh"
         )
         self.mentor_user = User.objects.create_user(
-            email="mentor@apex.edu", password="Password123!", role="MENTOR", college=self.college, first_name="Anil"
+            email="mentor@apex.edu", password="Password123!", role="FACULTY", college=self.college, first_name="Anil"
         )
         self.student_user_1 = User.objects.create_user(
             email="rahul@apex.edu", password="Password123!", role="STUDENT", college=self.college, first_name="Rahul"

@@ -4,7 +4,8 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from common.permissions import IsTenantMember
+from common.permissions import IsTenantMember, get_acting_role
+from accounts.models import AuditLog, User as AccountUser
 from leave.models import LeaveRequest
 from leave.serializers import LeaveRequestSerializer, LeaveReviewActionSerializer
 from communication.models import Notification
@@ -72,11 +73,12 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
+        acting_role = get_acting_role(self.request)
         routed_to = None
         routed_tier = ""
 
         # 1. Student -> Mentor
-        if user.role == "STUDENT":
+        if acting_role == "STUDENT":
             routed_tier = "MENTOR"
             student_profile = getattr(user, "student_profile", None)
             if student_profile and student_profile.mentor:
@@ -87,8 +89,8 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
                 if assignment and assignment.mentor:
                     routed_to = assignment.mentor.user
 
-        # 2. Faculty (Lab Faculty) / Mentor -> HOD
-        elif user.role in ["FACULTY", "MENTOR"]:
+        # 2. Faculty / Lab Faculty -> HOD
+        elif acting_role in ["FACULTY", "LAB_FACULTY", "MENTOR"]:
             routed_tier = "HOD"
             faculty_profile = getattr(user, "faculty_profile", None)
             if faculty_profile and faculty_profile.department:
@@ -96,23 +98,20 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
                 if dept.hod and dept.hod.user:
                     routed_to = dept.hod.user
                 else:
-                    from accounts.models import User as AccountUser
                     routed_to = AccountUser.objects.filter(
                         college=user.college, role="HOD"
                     ).first()
 
-        # 3. HOD -> Principal
-        elif user.role == "HOD":
+        # 3. HOD -> Principal (No self-approval: HOD escalates to Principal)
+        elif acting_role == "HOD":
             routed_tier = "PRINCIPAL"
-            from accounts.models import User as AccountUser
             routed_to = AccountUser.objects.filter(
                 college=user.college, role="PRINCIPAL"
             ).first()
 
         # 4. Principal -> Super Admin
-        elif user.role == "PRINCIPAL":
+        elif acting_role == "PRINCIPAL":
             routed_tier = "SUPER_ADMIN"
-            from accounts.models import User as AccountUser
             routed_to = AccountUser.objects.filter(role="SUPER_ADMIN").first()
 
         req = serializer.save(
@@ -121,6 +120,23 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             status="PENDING",
             routed_to=routed_to,
             routed_tier=routed_tier,
+        )
+
+        ip_addr = self.request.META.get('HTTP_X_FORWARDED_FOR', self.request.META.get('REMOTE_ADDR', '')).split(',')[0].strip()
+        AuditLog.objects.create(
+            college=req.college,
+            user=user,
+            acting_role=acting_role,
+            action='LEAVE_REQUEST_CREATED',
+            resource_type='LeaveRequest',
+            resource_id=str(req.id),
+            ip_address=ip_addr,
+            new_values={
+                'leave_type': req.leave_type,
+                'from_date': str(req.from_date),
+                'to_date': str(req.to_date),
+                'routed_tier': routed_tier,
+            }
         )
 
         # Send notification to the designated reviewer
@@ -138,23 +154,24 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
     def approve(self, request, pk=None):
         """Reviewer approves a leave application."""
         leave_req = self.get_object()
+        acting_role = get_acting_role(request)
 
-        # Authorization check: only routed reviewer, matching tier role, or Principal
-        if not self._can_review(request.user, leave_req):
+        # Rule 5: Nobody approves their own request
+        if not self._can_review(request.user, leave_req, acting_role=acting_role):
             return Response({
                 "success": False,
-                "message": "You are not authorized to review this leave request.",
+                "message": "You are not authorized to review this leave request. Self-approval is strictly forbidden.",
                 "code": "PERMISSION_DENIED"
             }, status=status.HTTP_403_FORBIDDEN)
 
         serializer = LeaveReviewActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         remarks = serializer.validated_data.get("approval_remarks", "Approved as requested.")
+        ip_addr = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', '')).split(',')[0].strip()
 
         # Multi-tier hierarchy: Principal <- HOD <- Faculty
         # If applicant is Faculty/Mentor and reviewer is HOD, forward to Principal for final sign-off
-        if leave_req.user.role in ["FACULTY", "MENTOR"] and request.user.role == "HOD":
-            from accounts.models import User as AccountUser
+        if leave_req.routed_tier == "HOD" and acting_role == "HOD":
             principal_user = AccountUser.objects.filter(
                 college=leave_req.college, role="PRINCIPAL"
             ).first()
@@ -163,6 +180,17 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
                 leave_req.routed_to = principal_user
             leave_req.approval_remarks = f"HOD Recommendation ({request.user.get_full_name()}): {remarks}"
             leave_req.save()
+
+            AuditLog.objects.create(
+                college=leave_req.college,
+                user=request.user,
+                acting_role=acting_role,
+                action='LEAVE_REQUEST_FORWARDED',
+                resource_type='LeaveRequest',
+                resource_id=str(leave_req.id),
+                ip_address=ip_addr,
+                new_values={'forwarded_to': 'PRINCIPAL', 'remarks': remarks}
+            )
 
             if principal_user:
                 Notification.objects.create(
@@ -183,14 +211,24 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             )
             return Response(LeaveRequestSerializer(leave_req).data)
 
-        # Final approval (by Principal for staff, or Faculty for Student)
+        # Final approval (by Principal for staff, or Faculty/Mentor for Student)
         leave_req.status = "APPROVED"
         leave_req.approved_by = request.user
         leave_req.approval_remarks = remarks
         leave_req.reviewed_at = timezone.now()
         leave_req.save()
 
-        # Send approval notification to original applicant
+        AuditLog.objects.create(
+            college=leave_req.college,
+            user=request.user,
+            acting_role=acting_role,
+            action='LEAVE_REQUEST_APPROVED',
+            resource_type='LeaveRequest',
+            resource_id=str(leave_req.id),
+            ip_address=ip_addr,
+            new_values={'status': 'APPROVED', 'remarks': remarks}
+        )
+
         Notification.objects.create(
             college=leave_req.college,
             recipient=leave_req.user,
@@ -206,9 +244,10 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
     def reject(self, request, pk=None):
         """Reviewer rejects a leave application."""
         leave_req = self.get_object()
+        acting_role = get_acting_role(request)
 
-        # Authorization check: only routed reviewer, matching tier role, or Principal
-        if not self._can_review(request.user, leave_req):
+        # Rule 5: Nobody decides their own request
+        if not self._can_review(request.user, leave_req, acting_role=acting_role):
             return Response({
                 "success": False,
                 "message": "You are not authorized to review this leave request.",
@@ -217,14 +256,26 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
 
         serializer = LeaveReviewActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        remarks = serializer.validated_data.get("approval_remarks", "Rejected.")
+        ip_addr = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', '')).split(',')[0].strip()
 
         leave_req.status = "REJECTED"
         leave_req.approved_by = request.user
-        leave_req.approval_remarks = serializer.validated_data.get("approval_remarks", "Rejected.")
+        leave_req.approval_remarks = remarks
         leave_req.reviewed_at = timezone.now()
         leave_req.save()
 
-        # Send rejection notification to original applicant
+        AuditLog.objects.create(
+            college=leave_req.college,
+            user=request.user,
+            acting_role=acting_role,
+            action='LEAVE_REQUEST_REJECTED',
+            resource_type='LeaveRequest',
+            resource_id=str(leave_req.id),
+            ip_address=ip_addr,
+            new_values={'status': 'REJECTED', 'remarks': remarks}
+        )
+
         Notification.objects.create(
             college=leave_req.college,
             recipient=leave_req.user,
@@ -236,13 +287,20 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
 
         return Response(LeaveRequestSerializer(leave_req).data)
 
-    def _can_review(self, user, leave_req):
-        if user.role in ["SUPER_ADMIN", "PRINCIPAL"]:
+    def _can_review(self, user, leave_req, acting_role=None):
+        # Rule 5: Nobody approves their own request
+        if leave_req.user_id == user.id:
+            return False
+
+        if not acting_role:
+            acting_role = getattr(user, 'active_role', None) or user.get_default_active_role()
+
+        if acting_role in ["SUPER_ADMIN", "PRINCIPAL"]:
             return True
         if leave_req.routed_to_id and leave_req.routed_to_id == user.id:
             return True
-        if leave_req.routed_tier in ["MENTOR", "FACULTY"] and user.role in ["MENTOR", "FACULTY"]:
+        if leave_req.routed_tier in ["MENTOR", "FACULTY"] and acting_role in ["MENTOR", "FACULTY"]:
             return True
-        if leave_req.routed_tier == "HOD" and user.role == "HOD":
+        if leave_req.routed_tier == "HOD" and acting_role == "HOD":
             return True
         return False

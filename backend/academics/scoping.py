@@ -35,8 +35,12 @@ def risk_queryset(user, class_section, request=None):
 
     acting_role = get_acting_role(request) if request else getattr(user, 'acting_role', None) or user.get_default_active_role()
 
-    # Super Admin and Principal have full institutional class scope
-    if acting_role in ['SUPER_ADMIN', 'PRINCIPAL'] or user.role in ['SUPER_ADMIN', 'PRINCIPAL']:
+    # Super Admin has NO routine student data access
+    if acting_role == 'SUPER_ADMIN':
+        raise PermissionDenied("Super Administrators do not have access to routine student academic data.")
+
+    # Principal has full institutional class scope
+    if acting_role == 'PRINCIPAL':
         return ("class", None)
 
     cs = resolve_class_section(class_section, college=user.college)
@@ -48,7 +52,7 @@ def risk_queryset(user, class_section, request=None):
         raise PermissionDenied("User does not have an active faculty profile.")
 
     # 1. HOD scope check
-    if acting_role == 'HOD' or (user.role == 'HOD' and acting_role == 'HOD'):
+    if acting_role == 'HOD':
         if faculty_profile.department_id == cs.department_id:
             return ("class", None)
 

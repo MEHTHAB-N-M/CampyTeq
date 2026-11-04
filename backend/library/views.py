@@ -120,7 +120,7 @@ class LibraryBookingViewSet(viewsets.ModelViewSet):
         user = request.user
         acting_role = get_acting_role(request)
 
-        if acting_role != 'LIBRARY_FACULTY' and acting_role not in ['SUPER_ADMIN', 'PRINCIPAL']:
+        if acting_role != 'LIBRARY_FACULTY':
             return Response(
                 {'detail': 'Only Library Faculty can view the pending approval queue.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -142,7 +142,7 @@ class LibraryBookingViewSet(viewsets.ModelViewSet):
         user = request.user
         acting_role = get_acting_role(request)
 
-        if acting_role != 'LIBRARY_FACULTY' and acting_role not in ['SUPER_ADMIN', 'PRINCIPAL']:
+        if acting_role != 'LIBRARY_FACULTY':
             return Response(
                 {'detail': 'Only Library Faculty can approve library bookings.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -206,7 +206,7 @@ class LibraryBookingViewSet(viewsets.ModelViewSet):
         user = request.user
         acting_role = get_acting_role(request)
 
-        if acting_role != 'LIBRARY_FACULTY' and acting_role not in ['SUPER_ADMIN', 'PRINCIPAL']:
+        if acting_role != 'LIBRARY_FACULTY':
             return Response(
                 {'detail': 'Only Library Faculty can reject library bookings.'},
                 status=status.HTTP_403_FORBIDDEN

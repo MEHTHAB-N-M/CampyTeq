@@ -62,6 +62,10 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_active_role(self, obj):
+        req = self.context.get('request')
+        if req:
+            from common.permissions import get_acting_role
+            return get_acting_role(req)
         return self.context.get('active_role') or obj.last_active_role or obj.get_default_active_role()
 
     def get_available_roles(self, obj):
@@ -102,6 +106,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     active_role = serializers.SerializerMethodField()
     available_roles = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
+    modules = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -119,11 +124,16 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'college',
             'profile_photo_url',
             'is_mfa_enabled',
-            'permissions'
+            'permissions',
+            'modules',
         ]
         read_only_fields = ['id', 'email', 'role', 'status', 'college']
 
     def get_active_role(self, obj):
+        req = self.context.get('request')
+        if req:
+            from common.permissions import get_acting_role
+            return get_acting_role(req)
         return self.context.get('active_role') or obj.last_active_role or obj.get_default_active_role()
 
     def get_available_roles(self, obj):
@@ -132,6 +142,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
     def get_permissions(self, obj):
         active = self.get_active_role(obj)
         return sorted(list(obj.get_all_permissions_list(acting_role=active)))
+
+    def get_modules(self, obj):
+        from .role_modules import get_modules_for_role
+        active = self.get_active_role(obj)
+        return get_modules_for_role(active, obj)
 
 
 class ChangePasswordSerializer(serializers.Serializer):

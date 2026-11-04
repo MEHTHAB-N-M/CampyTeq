@@ -59,6 +59,7 @@ class AttendanceSessionSerializer(serializers.ModelSerializer):
             "absent_count",
             "created_at",
         ]
+        read_only_fields = ["id", "faculty", "created_at"]
 
 
 class AttendanceSessionDetailSerializer(AttendanceSessionSerializer):

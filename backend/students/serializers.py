@@ -4,7 +4,7 @@ from accounts.serializers import UserProfileSerializer
 from faculty.serializers import FacultySerializer
 from academics.serializers import CourseSerializer, BatchSerializer, SemesterSerializer
 from departments.serializers import DepartmentSerializer
-from .models import Student, Guardian, StudentGuardian, MentorAssignment
+from .models import Student, Guardian, StudentGuardian, MentorAssignment, ParentWardLink
 
 class GuardianSerializer(serializers.ModelSerializer):
     class Meta:
@@ -202,3 +202,30 @@ class MentorAssignmentSerializer(serializers.ModelSerializer):
             'created_at',
         ]
         read_only_fields = ['id', 'assigned_on', 'created_at']
+
+
+class ParentWardLinkSerializer(serializers.ModelSerializer):
+    parent_email = serializers.EmailField(source='parent.email', read_only=True)
+    parent_name = serializers.CharField(source='parent.get_full_name', read_only=True)
+    student_roll = serializers.CharField(source='student.roll_number', read_only=True)
+    student_name = serializers.CharField(source='student.user.get_full_name', read_only=True)
+
+    class Meta:
+        model = ParentWardLink
+        fields = [
+            'id',
+            'parent',
+            'parent_email',
+            'parent_name',
+            'student',
+            'student_roll',
+            'student_name',
+            'relation',
+            'is_verified',
+            'verified_by',
+            'verified_at',
+            'is_active',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'verified_by', 'verified_at', 'created_at']
+

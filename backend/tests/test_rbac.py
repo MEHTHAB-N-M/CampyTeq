@@ -34,15 +34,15 @@ class TestRBAC:
     def test_principal_can_create_user(self):
         self.client.force_authenticate(user=self.principal)
         response = self.client.post('/api/v1/users/', {
-            'email': 'newfaculty@apex.edu',
+            'email': 'newhod@apex.edu',
             'password': 'StrongPassword123!',
             'first_name': 'New',
-            'last_name': 'Faculty',
-            'role': 'FACULTY',
+            'last_name': 'HOD',
+            'role': 'HOD',
             'status': 'ACTIVE'
         })
         assert response.status_code == 201
-        created_user = User.objects.get(email='newfaculty@apex.edu')
+        created_user = User.objects.get(email='newhod@apex.edu')
         # Ensure college is auto-assigned to creator's college
         assert created_user.college == self.college
 

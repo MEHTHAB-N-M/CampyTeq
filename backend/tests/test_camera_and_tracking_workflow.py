@@ -8,9 +8,10 @@ from accounts.models import User
 from students.models import Student, MentorAssignment
 from faculty.models import Faculty
 from departments.models import Department
-from academics.models import Course, Batch, Semester
+from academics.models import Course, Batch, Semester, Subject, FacultySubject
 from cameras.models import CameraZone, Camera
-from tracking.models import BiometricProfile, DetectionEvent, StudentLatestLocation, TrackingAccessLog
+from tracking.models import BiometricProfile, DetectionEvent, StudentLatestLocation, TrackingAccessLog, FaceEnrollment
+from attendance.models import AttendanceSession, StudentAttendance
 
 
 @pytest.mark.django_db
@@ -30,7 +31,7 @@ class TestCameraAndTrackingWorkflow:
             email="principal@apex.edu", password="Password123!", role="PRINCIPAL", college=self.college, first_name="Rajesh"
         )
         self.mentor_user = User.objects.create_user(
-            email="mentor@apex.edu", password="Password123!", role="MENTOR", college=self.college, first_name="Anil"
+            email="mentor@apex.edu", password="Password123!", role="FACULTY", college=self.college, first_name="Anil"
         )
         self.student_user_1 = User.objects.create_user(
             email="rahul@apex.edu", password="Password123!", role="STUDENT", college=self.college, first_name="Rahul"
@@ -44,6 +45,10 @@ class TestCameraAndTrackingWorkflow:
 
         # Department, Faculty, Students
         self.dept = Department.objects.create(college=self.college, name="Computer Science", code="CSE", status="ACTIVE")
+        self.faculty_hod = Faculty.objects.create(
+            user=self.hod_officer, college=self.college, faculty_number="FAC-HOD-01", department=self.dept,
+            designation="PROFESSOR", joining_date=date(2020, 1, 1), status="ACTIVE"
+        )
         self.course = Course.objects.create(
             college=self.college, department=self.dept, name="B.Tech CSE", code="BTECH-CAM", duration_years=4, total_semesters=8
         )
@@ -101,6 +106,49 @@ class TestCameraAndTrackingWorkflow:
         self.other_camera = Camera.objects.create(
             college=self.other_college, zone=self.other_zone, name="Beta Camera", code="CAM-BETA-GATE",
             camera_type="BULLET", status="ONLINE", fps=30
+        )
+
+        # Biometric Face Enrollment with verified consent (DPDP Act 2023)
+        FaceEnrollment.objects.create(
+            college=self.college,
+            student=self.student_1,
+            consent_given=True,
+            consent_by=self.principal,
+            embedding=[0.05] * 128,
+            is_active=True
+        )
+        FaceEnrollment.objects.create(
+            college=self.college,
+            student=self.student_2,
+            consent_given=True,
+            consent_by=self.principal,
+            embedding=[0.05] * 128,
+            is_active=True
+        )
+
+        # Subject, FacultySubject, and Active Period Session where student_1 is marked ABSENT
+        self.subject = Subject.objects.create(
+            college=self.college, department=self.dept, course=self.course,
+            name="Operating Systems", code="CS302", credits=4, semester_number=1
+        )
+        FacultySubject.objects.create(
+            college=self.college,
+            faculty=self.faculty,
+            subject=self.subject,
+            batch=self.batch,
+            academic_year="2026-2027"
+        )
+        now = timezone.now()
+        self.session = AttendanceSession.objects.create(
+            college=self.college, subject=self.subject, semester=self.semester,
+            faculty=self.faculty, date=now.date(),
+            start_time=(now - timedelta(minutes=15)).time(),
+            end_time=(now + timedelta(minutes=45)).time(),
+            session_type="REGULAR"
+        )
+        StudentAttendance.objects.create(
+            college=self.college, session=self.session,
+            student=self.student_1, status="ABSENT"
         )
 
     def test_camera_and_zone_crud_and_tenant_isolation(self):
@@ -186,7 +234,7 @@ class TestCameraAndTrackingWorkflow:
         assert latest.zone == self.zone_lab
 
     def test_mentor_cohort_scoping_on_tracking(self):
-        """Verify Mentor can search assigned student, but is rejected on non-assigned student."""
+        """Verify assigned faculty can search absent student, but is rejected on student not marked absent."""
         # Seed detection for both students
         DetectionEvent.objects.create(
             college=self.college, camera=self.camera_lab, zone=self.zone_lab,
@@ -204,23 +252,23 @@ class TestCameraAndTrackingWorkflow:
 
         self.client.force_authenticate(user=self.mentor_user)
 
-        # 1. Mentor queries assigned student (Rahul / student_1) -> Success (200)
+        # 1. Faculty queries absent student in active period (Rahul / student_1) -> Success (200)
         res1 = self.client.get('/api/v1/tracking/last-seen/', {
             'student_id': str(self.student_1.id),
-            'reason': 'Academic mentorship and attendance follow-up'
-        })
+            'reason': 'Academic period attendance follow-up'
+        }, HTTP_X_ACTIVE_ROLE="FACULTY")
         assert res1.status_code == 200
         data1 = res1.data.get('data', res1.data)
         assert data1['student']['roll_number'] == "CSE-CAM-01"
-        assert data1['latest_location']['zone_code'] == "ZONE-APEX-LAB"
+        assert data1['last_seen']['zone_code'] == "ZONE-APEX-LAB"
 
-        # 2. Mentor queries unassigned student (Ananya / student_2) -> Forbidden (403)
+        # 2. Faculty queries student not marked absent (Ananya / student_2) -> Bad Request (400)
         res2 = self.client.get('/api/v1/tracking/last-seen/', {
             'student_id': str(self.student_2.id),
             'reason': 'Attempting unauthorized lookup'
-        })
-        assert res2.status_code == 403
-        assert "mentor" in res2.data.get('message', '').lower()
+        }, HTTP_X_ACTIVE_ROLE="FACULTY")
+        assert res2.status_code == 400
+        assert res2.data.get('code') in ['STUDENT_NOT_MARKED_ABSENT', 'NO_ACTIVE_SESSION']
 
     def test_tracking_search_requires_reason_and_creates_audit_log(self):
         """Verify mandatory operational reason and audit log creation."""
@@ -229,15 +277,15 @@ class TestCameraAndTrackingWorkflow:
         # 1. Missing reason -> Bad Request (400)
         res1 = self.client.get('/api/v1/tracking/last-seen/', {
             'student_id': str(self.student_1.id),
-        })
+        }, HTTP_X_ACTIVE_ROLE="HOD")
         assert res1.status_code == 400
         assert "reason" in res1.data.get('message', '').lower()
 
-        # 2. Short reason (< 5 chars) -> Bad Request (400)
+        # 2. Short reason (< 3 chars) -> Bad Request (400)
         res2 = self.client.get('/api/v1/tracking/last-seen/', {
             'student_id': str(self.student_1.id),
-            'reason': 'test'
-        })
+            'reason': 'ab'
+        }, HTTP_X_ACTIVE_ROLE="HOD")
         assert res2.status_code == 400
 
         # 3. Valid reason -> Success (200) and audit log written
@@ -245,7 +293,7 @@ class TestCameraAndTrackingWorkflow:
         res3 = self.client.get('/api/v1/tracking/last-seen/', {
             'student_id': str(self.student_1.id),
             'reason': valid_reason
-        })
+        }, HTTP_X_ACTIVE_ROLE="HOD")
         assert res3.status_code == 200
 
         log = TrackingAccessLog.objects.filter(student=self.student_1, user=self.hod_officer).first()
@@ -253,7 +301,7 @@ class TestCameraAndTrackingWorkflow:
         assert log.reason == valid_reason
 
         # 4. Audit log endpoint returns this entry
-        audit_res = self.client.get('/api/v1/tracking/audit-logs/')
+        audit_res = self.client.get('/api/v1/tracking/audit-logs/', HTTP_X_ACTIVE_ROLE="HOD")
         assert audit_res.status_code == 200
         logs = audit_res.data.get('results', audit_res.data.get('data', audit_res.data))
         assert any(l['reason'] == valid_reason for l in logs)

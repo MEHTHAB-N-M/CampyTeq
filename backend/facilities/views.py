@@ -30,14 +30,14 @@ class FacilityViewSet(viewsets.ModelViewSet):
         user = self.request.user
         qs = Facility.objects.filter(college=user.college, is_active=True)
         acting_role = get_acting_role(self.request)
-        if (acting_role == "PRINCIPAL" or user.role == "PRINCIPAL") and not user.college_id:
+        if acting_role == "PRINCIPAL" and not user.college_id:
             return Facility.objects.all()
         return qs
 
     def perform_create(self, serializer):
         user = self.request.user
         acting_role = get_acting_role(self.request)
-        if acting_role not in ["PRINCIPAL", "SUPER_ADMIN", "HOD"] and user.role not in ["PRINCIPAL", "SUPER_ADMIN", "HOD"]:
+        if acting_role not in ["PRINCIPAL", "SUPER_ADMIN", "HOD"]:
             raise permissions.exceptions.PermissionDenied("Only Administrators or HODs can configure facilities.")
         serializer.save(college=user.college)
 
@@ -71,7 +71,7 @@ class FacilityBookingViewSet(viewsets.ModelViewSet):
         )
 
         # Principal gets read-only report view of all bookings
-        if acting_role in ["SUPER_ADMIN", "PRINCIPAL"] or user.role in ["SUPER_ADMIN", "PRINCIPAL"]:
+        if acting_role in ["SUPER_ADMIN", "PRINCIPAL"]:
             return qs
 
         if acting_role == "HOD":
@@ -88,7 +88,7 @@ class FacilityBookingViewSet(viewsets.ModelViewSet):
         acting_role = get_acting_role(request)
 
         allowed_requesters = ["FACULTY", "LAB_FACULTY", "HOD", "CLASS_INCHARGE", "MENTOR"]
-        if acting_role not in allowed_requesters and user.role not in allowed_requesters:
+        if acting_role not in allowed_requesters:
             return Response(
                 {"detail": "Only faculty instructors, lab faculty, mentors, and HODs can request facility bookings."},
                 status=status.HTTP_403_FORBIDDEN
@@ -166,10 +166,9 @@ class FacilityBookingViewSet(viewsets.ModelViewSet):
             status=FacilityBooking.BookingStatus.PENDING
         ).select_related("facility", "requested_by", "department")
 
-        if acting_role in ["PRINCIPAL", "SUPER_ADMIN"] or user.role in ["PRINCIPAL", "SUPER_ADMIN"]:
+        if acting_role in ["PRINCIPAL", "SUPER_ADMIN"]:
             # Principal decides requests made by HODs
-            hod_users = User.objects.filter(college=user.college, role="HOD")
-            return Response(FacilityBookingSerializer(qs.filter(requested_by__in=hod_users), many=True).data)
+            return Response(FacilityBookingSerializer(qs.filter(requested_by__user_roles__role="HOD", requested_by__user_roles__is_active=True).distinct(), many=True).data)
 
         if acting_role == "HOD":
             dept = getattr(getattr(user, "faculty_profile", None), "department", None)
@@ -210,7 +209,7 @@ class FacilityBookingViewSet(viewsets.ModelViewSet):
                 )
 
             # 2. Check decider authority
-            is_requester_hod = (booking.requested_by.role == "HOD")
+            is_requester_hod = (booking.requested_by.role == "HOD") or booking.requested_by.user_roles.filter(role="HOD", is_active=True).exists() or booking.requested_by.user_roles.filter(role="HOD", is_active=True).exists()
             if is_requester_hod:
                 if acting_role not in ["PRINCIPAL", "SUPER_ADMIN"]:
                     return Response(
@@ -297,7 +296,7 @@ class FacilityBookingViewSet(viewsets.ModelViewSet):
         if booking.requested_by_id == user.id:
             return Response({"detail": "Nobody is permitted to reject their own facility request."}, status=status.HTTP_403_FORBIDDEN)
 
-        is_requester_hod = (booking.requested_by.role == "HOD")
+        is_requester_hod = (booking.requested_by.role == "HOD") or booking.requested_by.user_roles.filter(role="HOD", is_active=True).exists()
         if is_requester_hod:
             if acting_role not in ["PRINCIPAL", "SUPER_ADMIN"]:
                 return Response({"detail": "HOD facility requests must be decided by the Principal."}, status=status.HTTP_403_FORBIDDEN)

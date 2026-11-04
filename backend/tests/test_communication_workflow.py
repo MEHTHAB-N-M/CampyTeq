@@ -33,7 +33,7 @@ class TestCommunicationWorkflow:
             email="hod@apex.edu", password="Password123!", role="HOD", college=self.college, first_name="Aruna"
         )
         self.mentor_user = User.objects.create_user(
-            email="mentor@apex.edu", password="Password123!", role="MENTOR", college=self.college, first_name="Anil"
+            email="mentor@apex.edu", password="Password123!", role="FACULTY", college=self.college, first_name="Anil"
         )
         self.faculty_user = User.objects.create_user(
             email="faculty@apex.edu", password="Password123!", role="FACULTY", college=self.college, first_name="Priya"

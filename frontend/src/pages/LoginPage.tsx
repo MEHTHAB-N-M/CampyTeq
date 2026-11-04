@@ -30,6 +30,9 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Demo buttons gated by DEMO_MODE / DEBUG flag (Section 6 spec)
+  const isDemoMode = import.meta.env.VITE_DEMO_MODE === "true" || import.meta.env.DEV;
+
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIsLoading(true);
@@ -82,11 +85,13 @@ export default function LoginPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Main Login Card */}
-          <Card className="lg:col-span-6 glass-panel border-indigo-500/20 shadow-2xl">
+          <Card className={`${isDemoMode ? "lg:col-span-6" : "lg:col-span-12 max-w-md mx-auto w-full"} glass-panel border-indigo-500/20 shadow-2xl`}>
             <CardHeader className="space-y-1 pb-4">
               <CardTitle className="text-lg font-bold">Institutional Sign In</CardTitle>
               <CardDescription className="text-xs">
-                Enter your institutional credentials or choose a demo persona below.
+                {isDemoMode
+                  ? "Enter your institutional credentials or choose a development demo persona below."
+                  : "Enter your official institutional credentials to access the platform."}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -156,49 +161,51 @@ export default function LoginPage() {
             </CardContent>
           </Card>
 
-          {/* Quick Demo Switcher Card */}
-          <Card className="lg:col-span-6 glass-panel border-indigo-500/20">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold">Development Demo Personas</CardTitle>
-                <Badge variant="outline" className="text-[10px] text-emerald-400 border-emerald-500/30">
-                  Local Dev Ready
-                </Badge>
-              </div>
-              <CardDescription className="text-xs">
-                Click any persona below to quickly test role-tailored dashboards and strict multi-tenant isolation.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-2 max-h-[440px] overflow-y-auto pr-1">
-                {DEMO_ACCOUNTS.map((account) => {
-                  const isSelected = email === account.email;
-                  return (
-                    <button
-                      type="button"
-                      key={account.email}
-                      onClick={() => handleSelectDemo(account.email)}
-                      className={`p-2.5 rounded-xl border text-left transition-all relative ${
-                        isSelected
-                          ? "border-indigo-500 bg-indigo-500/20 shadow-md shadow-indigo-500/10"
-                          : "border-border/60 bg-secondary/30 hover:border-indigo-500/40 hover:bg-secondary/60"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-foreground truncate">{account.role}</span>
-                        {isSelected && <CheckCircle2 className="h-3.5 w-3.5 text-indigo-400 shrink-0" />}
-                      </div>
-                      <p className="text-[10px] text-indigo-300/80 truncate mt-0.5">{account.email}</p>
-                      <p className="text-[9px] text-muted-foreground truncate mt-1">{account.note}</p>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="mt-3 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-300">
-                Default Password for all seeded accounts: <code className="font-bold">Password123!</code>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Quick Demo Switcher Card (gated by DEMO_MODE / DEBUG) */}
+          {isDemoMode && (
+            <Card className="lg:col-span-6 glass-panel border-indigo-500/20">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-semibold">Development Demo Personas</CardTitle>
+                  <Badge variant="outline" className="text-[10px] text-emerald-400 border-emerald-500/30">
+                    Local Dev Ready
+                  </Badge>
+                </div>
+                <CardDescription className="text-xs">
+                  Click any persona below to quickly test role-tailored dashboards and strict multi-tenant isolation.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-2 max-h-[440px] overflow-y-auto pr-1">
+                  {DEMO_ACCOUNTS.map((account) => {
+                    const isSelected = email === account.email;
+                    return (
+                      <button
+                        type="button"
+                        key={account.email}
+                        onClick={() => handleSelectDemo(account.email)}
+                        className={`p-2.5 rounded-xl border text-left transition-all relative ${
+                          isSelected
+                            ? "border-indigo-500 bg-indigo-500/20 shadow-md shadow-indigo-500/10"
+                            : "border-border/60 bg-secondary/30 hover:border-indigo-500/40 hover:bg-secondary/60"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-foreground truncate">{account.role}</span>
+                          {isSelected && <CheckCircle2 className="h-3.5 w-3.5 text-indigo-400 shrink-0" />}
+                        </div>
+                        <p className="text-[10px] text-indigo-300/80 truncate mt-0.5">{account.email}</p>
+                        <p className="text-[9px] text-muted-foreground truncate mt-1">{account.note}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-300">
+                  Default Password for all seeded accounts: <code className="font-bold">Password123!</code>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

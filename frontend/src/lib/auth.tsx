@@ -23,6 +23,15 @@ export interface RoleItem {
   is_active: boolean;
 }
 
+export interface ModuleItem {
+  id: string;
+  title: string;
+  href: string;
+  icon: string;
+  badge?: string;
+  actions?: string[];
+}
+
 export interface College {
   id: string;
   name: string;
@@ -52,6 +61,7 @@ export interface User {
   profile_photo_url?: string;
   is_mfa_enabled: boolean;
   permissions: string[];
+  modules?: ModuleItem[];
 }
 
 interface AuthContextType {

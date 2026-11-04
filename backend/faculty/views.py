@@ -5,7 +5,7 @@ from django.core.exceptions import PermissionDenied
 from rest_framework import viewsets, permissions, filters, status, views
 from rest_framework.response import Response
 
-from common.permissions import IsAdminOrPrincipal, IsTenantMember, get_acting_role
+from common.permissions import IsAdminOrPrincipal, IsTenantMember, get_acting_role, IsAdminPrincipalOrHOD
 from accounts.models import AuditLog
 from .models import Faculty
 from .serializers import FacultySerializer, FacultyDetailSerializer
@@ -34,7 +34,7 @@ class FacultyViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdminOrPrincipal(), IsTenantMember()]
+            return [IsAdminPrincipalOrHOD(), IsTenantMember()]
         return [permissions.IsAuthenticated(), IsTenantMember()]
 
     def get_serializer_class(self):
@@ -58,20 +58,41 @@ class FacultyViewSet(viewsets.ModelViewSet):
             qs = qs.filter(status=status_filter)
 
         acting_role = get_acting_role(self.request)
-        if acting_role in ['SUPER_ADMIN', 'PRINCIPAL'] or user.role in ['SUPER_ADMIN', 'PRINCIPAL']:
+        if acting_role in ['SUPER_ADMIN', 'PRINCIPAL']:
             if user.college:
                 return qs.filter(college=user.college)
             return qs
         return qs.filter(college=user.college)
 
     def perform_create(self, serializer):
-        user = self.request.user
+        caller = self.request.user
         acting_role = get_acting_role(self.request)
-        if acting_role in ['SUPER_ADMIN', 'PRINCIPAL'] or user.role in ['SUPER_ADMIN', 'PRINCIPAL']:
-            college_id = self.request.data.get('college_id') or user.college_id
-            serializer.save(college_id=college_id)
+        dept = serializer.validated_data.get('department')
+
+        if acting_role == 'HOD':
+            faculty_profile = getattr(caller, 'faculty_profile', None)
+            if not faculty_profile:
+                raise PermissionDenied("Active faculty profile required for HOD.")
+            if dept and dept.id != faculty_profile.department_id:
+                raise PermissionDenied("HODs can only create faculty in their own department.")
+            faculty = serializer.save(college=caller.college, department=faculty_profile.department)
+        elif acting_role in ['SUPER_ADMIN', 'PRINCIPAL']:
+            college_id = self.request.data.get('college_id') or caller.college_id
+            faculty = serializer.save(college_id=college_id)
         else:
-            serializer.save(college=user.college)
+            raise PermissionDenied("You do not have permission to create faculty members.")
+
+        ip_addr = self.request.META.get('HTTP_X_FORWARDED_FOR', self.request.META.get('REMOTE_ADDR', '')).split(',')[0].strip()
+        AuditLog.objects.create(
+            college=faculty.college,
+            user=caller,
+            acting_role=acting_role,
+            action='FACULTY_CREATED',
+            resource_type='Faculty',
+            resource_id=str(faculty.id),
+            ip_address=ip_addr,
+            new_values={'faculty_number': faculty.faculty_number, 'department': str(faculty.department_id)}
+        )
 
 
 class FacultyClassesView(views.APIView):

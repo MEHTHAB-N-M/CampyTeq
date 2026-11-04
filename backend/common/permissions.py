@@ -45,7 +45,9 @@ class IsPrincipal(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         acting_role = get_acting_role(request)
-        return acting_role in ['PRINCIPAL', 'SUPER_ADMIN'] or request.user.role in ['PRINCIPAL', 'SUPER_ADMIN']
+        if acting_role not in ['PRINCIPAL', 'SUPER_ADMIN']:
+            return False
+        return UserRole.objects.filter(user=request.user, role=acting_role, is_active=True).exists()
 
 
 IsSuperAdmin = IsPrincipal
@@ -58,7 +60,9 @@ class IsAdminPrincipalOrHOD(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         acting_role = get_acting_role(request)
-        return acting_role in ['PRINCIPAL', 'SUPER_ADMIN', 'HOD'] or request.user.role in ['PRINCIPAL', 'SUPER_ADMIN']
+        if acting_role not in ['PRINCIPAL', 'SUPER_ADMIN', 'HOD']:
+            return False
+        return UserRole.objects.filter(user=request.user, role=acting_role, is_active=True).exists()
 
 
 class IsHOD(permissions.BasePermission):
@@ -68,11 +72,11 @@ class IsHOD(permissions.BasePermission):
             return False
         acting_role = get_acting_role(request)
         if acting_role == 'SUPER_ADMIN':
-            return True
+            return UserRole.objects.filter(user=request.user, role='SUPER_ADMIN', is_active=True).exists()
         if acting_role != 'HOD':
             return False
         # Verify HOD is still active in UserRole
-        return UserRole.objects.filter(user=request.user, role='HOD', is_active=True).exists() or request.user.role == 'HOD'
+        return UserRole.objects.filter(user=request.user, role='HOD', is_active=True).exists()
 
 
 class IsLibraryFaculty(permissions.BasePermission):
@@ -82,11 +86,10 @@ class IsLibraryFaculty(permissions.BasePermission):
             return False
         acting_role = get_acting_role(request)
         if acting_role == 'SUPER_ADMIN':
-            return True
-        return acting_role == 'LIBRARY_FACULTY' and (
-            UserRole.objects.filter(user=request.user, role='LIBRARY_FACULTY', is_active=True).exists()
-            or request.user.role == 'LIBRARY_FACULTY'
-        )
+            return UserRole.objects.filter(user=request.user, role='SUPER_ADMIN', is_active=True).exists()
+        if acting_role != 'LIBRARY_FACULTY':
+            return False
+        return UserRole.objects.filter(user=request.user, role='LIBRARY_FACULTY', is_active=True).exists()
 
 
 class IsTenantMember(permissions.BasePermission):
@@ -99,13 +102,15 @@ class IsTenantMember(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         acting_role = get_acting_role(request)
-        if acting_role in ['SUPER_ADMIN', 'PRINCIPAL'] or request.user.role in ['SUPER_ADMIN', 'PRINCIPAL']:
+        if acting_role == 'SUPER_ADMIN':
+            return True
+        if acting_role == 'PRINCIPAL' and not request.user.college_id:
             return True
         return bool(request.user.college and request.user.college.is_active)
 
     def has_object_permission(self, request, view, obj):
         acting_role = get_acting_role(request)
-        if acting_role in ['SUPER_ADMIN', 'PRINCIPAL'] or request.user.role in ['SUPER_ADMIN', 'PRINCIPAL']:
+        if acting_role == 'SUPER_ADMIN':
             return True
         if hasattr(obj, 'college'):
             return obj.college_id == request.user.college_id
@@ -127,17 +132,17 @@ class HasGranularPermission(permissions.BasePermission):
         acting_role = get_acting_role(request)
 
         # Super Admin override
-        if acting_role == 'SUPER_ADMIN' or request.user.role == 'SUPER_ADMIN':
-            return True
+        if acting_role == 'SUPER_ADMIN':
+            return UserRole.objects.filter(user=request.user, role='SUPER_ADMIN', is_active=True).exists()
 
-        # Re-check that active role is still active in UserRole (unless primary base role)
+        # Re-check that active role is still active in UserRole
         is_active_held = UserRole.objects.filter(
             user=request.user,
             role=acting_role,
             is_active=True
         ).exists()
 
-        if not is_active_held and acting_role != request.user.role:
+        if not is_active_held:
             # Assignment was revoked! Access denied immediately.
             return False
 
@@ -161,12 +166,14 @@ class IsLinkedParent(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         acting_role = get_acting_role(request)
-        return acting_role == 'PARENT' or request.user.role in ['PARENT', 'PRINCIPAL', 'SUPER_ADMIN']
+        if acting_role in ['PRINCIPAL', 'SUPER_ADMIN']:
+            return True
+        return acting_role == 'PARENT' and UserRole.objects.filter(user=request.user, role='PARENT', is_active=True).exists()
 
     def has_object_permission(self, request, view, obj):
         from students.models import ParentWardLink
         acting_role = get_acting_role(request)
-        if acting_role in ['PRINCIPAL', 'SUPER_ADMIN'] or request.user.role in ['PRINCIPAL', 'SUPER_ADMIN']:
+        if acting_role in ['PRINCIPAL', 'SUPER_ADMIN']:
             return True
 
         student = getattr(obj, 'student', obj)

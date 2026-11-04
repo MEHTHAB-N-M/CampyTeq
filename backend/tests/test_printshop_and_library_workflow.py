@@ -30,8 +30,8 @@ class TestPrintShopAndLibraryWorkflow:
         self.print_staff = User.objects.create_user(
             email="printstaff@apex.edu", password="Password123!", role="PRINT_STAFF", college=self.college, first_name="Dev"
         )
-        self.library_staff = User.objects.create_user(
-            email="librarystaff@apex.edu", password="Password123!", role="LIBRARY_STAFF", college=self.college, first_name="Anita"
+        self.library_faculty = User.objects.create_user(
+            email="librarystaff@apex.edu", password="Password123!", role="LIBRARY_FACULTY", college=self.college, first_name="Anita"
         )
         self.other_user = User.objects.create_user(
             email="user@beta.edu", password="Password123!", role="STUDENT", college=self.other_college, first_name="BetaUser"

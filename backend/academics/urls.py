@@ -6,6 +6,7 @@ from .views import (
     SubjectViewSet,
     FacultySubjectViewSet,
     TimetableEntryViewSet,
+    SubjectAssignmentViewSet,
 )
 
 router = DefaultRouter()
@@ -14,6 +15,7 @@ router.register(r'batches', BatchViewSet, basename='batch')
 router.register(r'semesters', SemesterViewSet, basename='semester')
 router.register(r'subjects', SubjectViewSet, basename='subject')
 router.register(r'faculty-assignments', FacultySubjectViewSet, basename='faculty-assignment')
+router.register(r'subject-assignments', SubjectAssignmentViewSet, basename='subject-assignment')
 router.register(r'timetable', TimetableEntryViewSet, basename='timetable')
 
 urlpatterns = router.urls

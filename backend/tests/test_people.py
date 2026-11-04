@@ -65,7 +65,7 @@ class TestCollegeAndPeople:
             password="Password123!",
             first_name="Mentor",
             last_name="Anil",
-            role="MENTOR",
+            role="FACULTY",
             college=self.college_a,
             status="ACTIVE"
         )
@@ -244,7 +244,7 @@ class TestCollegeAndPeople:
     def test_mentor_query_scoping(self):
         """Mentor Anil should only see student 1 (in his cohort) and NOT student 2."""
         self.client.force_authenticate(user=self.user_mentor_a)
-        res = self.client.get('/api/v1/students/')
+        res = self.client.get('/api/v1/students/', HTTP_X_ACTIVE_ROLE="MENTOR")
         assert res.status_code == 200
         roll_numbers = [s['roll_number'] for s in res.data['results']]
         assert "CSE-01" in roll_numbers

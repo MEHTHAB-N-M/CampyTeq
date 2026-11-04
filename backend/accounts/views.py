@@ -1,8 +1,10 @@
 from rest_framework import viewsets, permissions, status, views
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
-from common.permissions import IsSuperAdmin, IsAdminOrPrincipal, IsTenantMember
+from django.core.exceptions import PermissionDenied
+from common.permissions import IsSuperAdmin, IsAdminOrPrincipal, IsTenantMember, IsAdminPrincipalOrHOD, get_acting_role
 from .models import User, Role, Permission, AuditLog, UserRole
 from .serializers import (
     UserSerializer,
@@ -23,16 +25,33 @@ class UserProfileView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        active_role = getattr(request, 'acting_role', None) or request.user.last_active_role or request.user.get_default_active_role()
-        serializer = UserProfileSerializer(request.user, context={'active_role': active_role})
+        active_role = get_acting_role(request)
+        serializer = UserProfileSerializer(request.user, context={'request': request, 'active_role': active_role})
         return Response(serializer.data)
 
     def patch(self, request):
-        active_role = getattr(request, 'acting_role', None) or request.user.last_active_role or request.user.get_default_active_role()
-        serializer = UserProfileSerializer(request.user, data=request.data, partial=True, context={'active_role': active_role})
+        active_role = get_acting_role(request)
+        serializer = UserProfileSerializer(request.user, data=request.data, partial=True, context={'request': request, 'active_role': active_role})
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+class UserModulesView(views.APIView):
+    """
+    Returns the role-adaptive permitted modules, routes, icons, and actions
+    strictly for the user's active acting_role.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .role_modules import get_modules_for_role
+        acting_role = get_acting_role(request)
+        modules = get_modules_for_role(acting_role, request.user)
+        return Response({
+            'role': acting_role,
+            'modules': modules
+        })
 
 
 class SwitchRoleView(views.APIView):
@@ -127,16 +146,17 @@ class ChangePasswordView(views.APIView):
 
 class UserViewSet(viewsets.ModelViewSet):
     """
-    Tenant-isolated User management.
-    Principals can manage users belonging to their college.
-    Super Admins can administer across colleges.
+    Tenant-isolated User management enforcing hierarchical provisioning:
+    - SUPER_ADMIN: creates Colleges and Principals.
+    - PRINCIPAL: creates HODs, service staff, and parents within own college.
+    - HOD: creates Faculty, Lab Faculty, and Students within own department.
     """
     serializer_class = UserSerializer
 
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdminOrPrincipal()]
-        return [permissions.IsAuthenticated()]
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'deactivate']:
+            return [IsAdminPrincipalOrHOD()]
+        return [IsAdminPrincipalOrHOD()]
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -149,26 +169,98 @@ class UserViewSet(viewsets.ModelViewSet):
             return User.objects.none()
 
         qs = User.objects.filter(is_deleted=False).select_related('college').prefetch_related('custom_roles', 'user_roles')
+        acting_role = get_acting_role(self.request)
 
-        if user.role in ['SUPER_ADMIN', 'PRINCIPAL']:
+        if acting_role in ['SUPER_ADMIN', 'PRINCIPAL']:
             college_filter = self.request.query_params.get('college_id') or getattr(self.request, 'college', None)
             if college_filter:
                 cid = getattr(college_filter, 'id', college_filter)
                 return qs.filter(college_id=cid)
-            if user.role == 'PRINCIPAL' and user.college_id:
+            if acting_role == 'PRINCIPAL' and user.college_id:
                 return qs.filter(college_id=user.college_id)
             return qs
 
         return qs.filter(college_id=user.college_id)
 
     def perform_create(self, serializer):
-        user = self.request.user
-        college = getattr(user, 'college', None) or getattr(self.request, 'college', None)
-        college_id = self.request.data.get('college_id') or getattr(college, 'id', None)
-        if college_id and user.role in ['SUPER_ADMIN', 'PRINCIPAL']:
-            serializer.save(college_id=college_id)
+        caller = self.request.user
+        acting_role = get_acting_role(self.request)
+        target_role = serializer.validated_data.get('role', 'STUDENT')
+        target_college = serializer.validated_data.get('college') or caller.college
+
+        # 1. SUPER_ADMIN rules
+        if acting_role == 'SUPER_ADMIN':
+            if target_role not in ['PRINCIPAL', 'SUPER_ADMIN']:
+                raise PermissionDenied("Super Administrators can only provision Principals or Super Administrators.")
+            user = serializer.save()
+        # 2. PRINCIPAL rules
+        elif acting_role == 'PRINCIPAL':
+            allowed_for_principal = ['HOD', 'ACCOUNTANT', 'LIBRARY_FACULTY', 'PRINT_STAFF', 'SECURITY', 'PARENT']
+            if target_role not in allowed_for_principal:
+                raise PermissionDenied(f"Principals can only provision HODs, service staff, or parents. '{target_role}' not permitted.")
+            if caller.college_id and target_college and target_college.id != caller.college_id:
+                raise PermissionDenied("Cannot create users for a different college.")
+            user = serializer.save(college=caller.college)
+        # 3. HOD rules
+        elif acting_role == 'HOD':
+            allowed_for_hod = ['FACULTY', 'LAB_FACULTY', 'STUDENT']
+            if target_role not in allowed_for_hod:
+                raise PermissionDenied(f"HODs can only provision Faculty, Lab Faculty, or Students. '{target_role}' not permitted.")
+            if caller.college_id and target_college and target_college.id != caller.college_id:
+                raise PermissionDenied("Cannot create users for a different college.")
+            user = serializer.save(college=caller.college)
         else:
-            serializer.save(college=user.college)
+            raise PermissionDenied("You do not have permission to provision user accounts.")
+
+        # Write immutable audit log
+        ip_addr = self.request.META.get('HTTP_X_FORWARDED_FOR', self.request.META.get('REMOTE_ADDR', '')).split(',')[0].strip()
+        AuditLog.objects.create(
+            college=user.college,
+            user=caller,
+            acting_role=acting_role,
+            action='USER_CREATED',
+            resource_type='User',
+            resource_id=str(user.id),
+            ip_address=ip_addr,
+            new_values={'email': user.email, 'role': user.role, 'status': user.status}
+        )
+
+    @action(detail=True, methods=['post'], url_path='deactivate')
+    def deactivate(self, request, pk=None):
+        target_user = self.get_object()
+        caller = request.user
+        acting_role = get_acting_role(request)
+
+        if acting_role == 'SUPER_ADMIN':
+            pass
+        elif acting_role == 'PRINCIPAL':
+            if target_user.college_id != caller.college_id:
+                return Response({'detail': 'Cannot deactivate users from another college.'}, status=status.HTTP_403_FORBIDDEN)
+            if target_user.role in ['SUPER_ADMIN', 'PRINCIPAL']:
+                return Response({'detail': 'Cannot deactivate peer or superior administrator.'}, status=status.HTTP_403_FORBIDDEN)
+        elif acting_role == 'HOD':
+            if target_user.college_id != caller.college_id or target_user.role not in ['FACULTY', 'LAB_FACULTY', 'STUDENT']:
+                return Response({'detail': 'HODs can only deactivate departmental faculty and students.'}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+        target_user.is_active = False
+        target_user.status = 'INACTIVE'
+        target_user.save()
+        UserRole.objects.filter(user=target_user).update(is_active=False)
+
+        ip_addr = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', '')).split(',')[0].strip()
+        AuditLog.objects.create(
+            college=target_user.college,
+            user=caller,
+            acting_role=acting_role,
+            action='USER_DEACTIVATED',
+            resource_type='User',
+            resource_id=str(target_user.id),
+            ip_address=ip_addr,
+            new_values={'is_active': False, 'status': 'INACTIVE'}
+        )
+        return Response({'success': True, 'message': f"User {target_user.email} deactivated successfully."})
 
 
 class RoleViewSet(viewsets.ReadOnlyModelViewSet):

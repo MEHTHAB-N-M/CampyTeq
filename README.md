@@ -78,6 +78,7 @@ CampyTeq implements strictly **11 base roles** with dynamic assignment modes:
 - Allowed only from period start until **30 minutes after completion**.
 - Gated by `FaceEnrollment.consent_given=True` recorded by parent/guardian or principal.
 - No photo uploads or free-text search permitted. Returns last-seen camera zone, timestamp, and confidence only (`"possible match, verify manually"`). No route trajectories or raw video feeds.
+- **Statutory DPDP Act 2023 Notice**: Institutional biometric consent forms, parental notices for minors under 18, and withdrawal disclaimers must undergo legal review by the institution's legal counsel or Data Protection Officer (DPO) before live onboarding.
 
 ### 4. Conflict-of-Interest & Overlap Controls
 - **No Self-Approval**: HOD's own leave and facility requests escalate to the Principal.

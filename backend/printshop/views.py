@@ -1,10 +1,12 @@
 from decimal import Decimal
 from django.utils import timezone
+from django.core.exceptions import PermissionDenied
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from common.permissions import IsTenantMember
+from common.permissions import IsTenantMember, get_acting_role
+from accounts.models import AuditLog
 from printshop.models import PrintPricing, PrintOrder
 from printshop.serializers import (
     PrintPricingSerializer,
@@ -40,12 +42,20 @@ class PrintOrderViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        if not user or not user.is_authenticated:
+            return PrintOrder.objects.none()
+
+        acting_role = get_acting_role(self.request)
         qs = PrintOrder.objects.filter(college=user.college).select_related(
             "user", "handled_by"
         )
-        if user.role in ["PRINT_STAFF", "PRINCIPAL"]:
+        if acting_role in ["PRINT_STAFF", "PRINCIPAL"]:
             return qs
         return qs.filter(user=user)
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        serializer.save(college=user.college, user=user)
 
     @action(detail=False, methods=["post"])
     def calculate_price(self, request):
@@ -76,7 +86,8 @@ class PrintOrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def update_status(self, request, pk=None):
-        if request.user.role not in ["PRINT_STAFF", "PRINCIPAL"]:
+        acting_role = get_acting_role(request)
+        if acting_role not in ["PRINT_STAFF", "PRINCIPAL"]:
             return Response({
                 "success": False,
                 "message": "Only Print Staff or Principal can update order statuses.",
@@ -114,3 +125,53 @@ class PrintOrderViewSet(viewsets.ModelViewSet):
         )
 
         return Response(PrintOrderSerializer(order).data)
+
+    @action(detail=True, methods=["post"], url_path="verify-pin")
+    def verify_pin(self, request, pk=None):
+        """
+        POST /api/v1/printshop/{id}/verify-pin/
+        Print Staff verifies the 4-digit pickup PIN provided in person by the student.
+        Wrong PIN is rejected and counted.
+        """
+        acting_role = get_acting_role(request)
+        if acting_role not in ["PRINT_STAFF", "PRINCIPAL"]:
+            return Response({
+                "detail": "Only Print Staff or Principal can verify pickup PINs."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        order = self.get_object()
+        submitted_pin = str(request.data.get("pin") or request.data.get("pickup_pin", "")).strip()
+
+        if not submitted_pin:
+            return Response({"detail": "4-digit pickup PIN is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if submitted_pin != str(order.pickup_pin):
+            order.failed_pin_attempts += 1
+            order.save(update_fields=["failed_pin_attempts"])
+            return Response({
+                "detail": f"Incorrect pickup PIN. Total failed attempts: {order.failed_pin_attempts}."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        order.status = PrintOrder.OrderStatus.COMPLETED
+        order.completed_at = timezone.now()
+        order.handled_by = request.user
+        order.payment_status = PrintOrder.PaymentStatus.PAID
+        order.save()
+
+        ip_addr = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', '')).split(',')[0].strip()
+        AuditLog.objects.create(
+            college=order.college,
+            user=request.user,
+            acting_role=acting_role,
+            action='PRINT_ORDER_PICKUP_VERIFIED',
+            resource_type='PrintOrder',
+            resource_id=str(order.id),
+            ip_address=ip_addr,
+            new_values={
+                'order_number': order.order_number,
+                'status': order.status,
+                'failed_pin_attempts': order.failed_pin_attempts,
+            }
+        )
+
+        return Response(PrintOrderSerializer(order).data, status=status.HTTP_200_OK)

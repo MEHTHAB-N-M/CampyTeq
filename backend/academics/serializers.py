@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Course, Batch, Semester, Subject, FacultySubject, TimetableEntry
+from .models import Course, Batch, Semester, Subject, FacultySubject, TimetableEntry, SubjectAssignment, ClassSection
 
 class SemesterSerializer(serializers.ModelSerializer):
     batch_name = serializers.CharField(source='batch.name', read_only=True)
@@ -160,3 +160,35 @@ class TimetableEntrySerializer(serializers.ModelSerializer):
             'created_at',
         ]
         read_only_fields = ['id', 'created_at']
+
+
+class SubjectAssignmentSerializer(serializers.ModelSerializer):
+    faculty_name = serializers.CharField(source='faculty.user.get_full_name', read_only=True)
+    subject_name = serializers.CharField(source='subject.name', read_only=True)
+    subject_code = serializers.CharField(source='subject.code', read_only=True)
+    class_section_name = serializers.CharField(source='class_section.name', read_only=True)
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    is_currently_valid = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = SubjectAssignment
+        fields = [
+            'id',
+            'department',
+            'department_name',
+            'faculty',
+            'faculty_name',
+            'subject',
+            'subject_name',
+            'subject_code',
+            'class_section',
+            'class_section_name',
+            'academic_year',
+            'is_active',
+            'end_date',
+            'is_currently_valid',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'is_currently_valid', 'created_at', 'updated_at']
+
