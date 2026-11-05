@@ -22,6 +22,8 @@ import {
   Send,
   Check,
   Clock,
+  UserPlus,
+  Upload,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -83,13 +85,26 @@ interface Student {
 
 export default function StudentsPage() {
   const { user } = useAuth();
-  const isMentor = user?.role === "MENTOR";
+  const activeRole = user?.active_role || user?.role || "";
+  const isMentor = activeRole === "MENTOR";
+  const canEnroll = activeRole === "HOD" || activeRole === "PRINCIPAL" || user?.email?.toLowerCase().includes("hod");
+
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [activeModalTab, setActiveModalTab] = useState<"radar" | "details" | "counseling">("radar");
+
+  // Enrollment State
+  const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
+  const [studentRoll, setStudentRoll] = useState("");
+  const [studentEmail, setStudentEmail] = useState("");
+  const [studentFirstName, setStudentFirstName] = useState("");
+  const [studentLastName, setStudentLastName] = useState("");
+  const [enrollError, setEnrollError] = useState("");
+  const [enrollSuccess, setEnrollSuccess] = useState("");
+  const [enrolling, setEnrolling] = useState(false);
 
   // Counseling state
   const [counselingNotes, setCounselingNotes] = useState("");
@@ -282,6 +297,32 @@ export default function StudentsPage() {
     loadStudents();
   }, []);
 
+  const handleEnrollStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEnrollError("");
+    setEnrollSuccess("");
+    setEnrolling(true);
+    try {
+      const csv_data = `roll_number,email,first_name,last_name\n${studentRoll},${studentEmail},${studentFirstName},${studentLastName}`;
+      await apiRequest("/students/bulk-import/", {
+        method: "POST",
+        body: JSON.stringify({ csv_data }),
+      });
+      setEnrollSuccess(`Successfully enrolled ${studentFirstName} ${studentLastName} (${studentRoll})!`);
+      setStudentRoll("");
+      setStudentEmail("");
+      setStudentFirstName("");
+      setStudentLastName("");
+      const data = await apiRequest<{ results: Student[] } | Student[]>("/students/");
+      const list = Array.isArray(data) ? data : data?.results || [];
+      if (list.length > 0) setStudents(list);
+    } catch (err: any) {
+      setEnrollError(err.message || "Failed to enroll student.");
+    } finally {
+      setEnrolling(false);
+    }
+  };
+
   const handleSaveCounseling = (e: React.FormEvent) => {
     e.preventDefault();
     setCounselingSuccess(true);
@@ -328,6 +369,19 @@ export default function StudentsPage() {
           <Badge variant="secondary" className="text-xs py-1">
             {filteredStudents.length} Students in Cohort
           </Badge>
+          {canEnroll && (
+            <Button
+              onClick={() => {
+                setEnrollError("");
+                setEnrollSuccess("");
+                setIsEnrollModalOpen(true);
+              }}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs gap-1.5 shadow-md transition-all"
+            >
+              <UserPlus className="h-4 w-4" />
+              <span>+ Enroll Student</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -813,6 +867,132 @@ export default function StudentsPage() {
               )}
             </CardContent>
           </Card>
+        </div>
+      )}
+      {/* =========================================================================
+          ENROLL STUDENT MODAL (HOD / Principal)
+         ========================================================================= */}
+      {isEnrollModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg rounded-2xl bg-card border border-border shadow-2xl p-6 overflow-hidden">
+            <div className="flex items-center justify-between pb-3 border-b border-border/60">
+              <div className="flex items-center gap-2">
+                <UserPlus className="h-5 w-5 text-indigo-400" />
+                <h3 className="text-base font-bold text-foreground">
+                  Enroll Student in Department
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsEnrollModalOpen(false)}
+                className="text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-secondary/60 transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {enrollError && (
+              <div className="mt-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
+                {enrollError}
+              </div>
+            )}
+
+            {enrollSuccess && (
+              <div className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
+                <Check className="h-4 w-4 shrink-0" />
+                <span>{enrollSuccess}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleEnrollStudent} className="mt-4 space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-muted-foreground block mb-1">
+                    First Name
+                  </label>
+                  <Input
+                    type="text"
+                    required
+                    value={studentFirstName}
+                    onChange={(e) => setStudentFirstName(e.target.value)}
+                    placeholder="e.g. Rahul"
+                    className="text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-muted-foreground block mb-1">
+                    Last Name
+                  </label>
+                  <Input
+                    type="text"
+                    required
+                    value={studentLastName}
+                    onChange={(e) => setStudentLastName(e.target.value)}
+                    placeholder="e.g. Kumar"
+                    className="text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-muted-foreground block mb-1">
+                  Student Email
+                </label>
+                <Input
+                  type="email"
+                  required
+                  value={studentEmail}
+                  onChange={(e) => setStudentEmail(e.target.value)}
+                  placeholder="e.g. rahul.kumar@apex.edu"
+                  className="text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-muted-foreground block mb-1">
+                  Roll Number / Section Roll ID
+                </label>
+                <Input
+                  type="text"
+                  required
+                  value={studentRoll}
+                  onChange={(e) => setStudentRoll(e.target.value)}
+                  placeholder="e.g. 2026-CSE-099"
+                  className="text-xs font-mono"
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-secondary/30 border border-border/40 text-[11px] text-muted-foreground">
+                <p>
+                  ℹ️ Student account will be registered and mapped to your department roster. Default password: <span className="font-mono text-indigo-300">Password123!</span>
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-border/60 flex items-center justify-end gap-2.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsEnrollModalOpen(false)}
+                  className="text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={enrolling}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs gap-1.5"
+                >
+                  {enrolling ? (
+                    <span>Enrolling...</span>
+                  ) : (
+                    <>
+                      <Check className="h-3.5 w-3.5" />
+                      <span>Confirm & Enroll</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

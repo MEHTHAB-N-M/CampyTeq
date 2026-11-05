@@ -27,8 +27,11 @@ import {
   Library,
   Dumbbell,
   FileSpreadsheet,
+  X,
+  Check,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
@@ -175,6 +178,69 @@ export function AdminDashboard() {
     );
   };
 
+  // Super Admin: College & Principal Creation State
+  const [isCollegeModalOpen, setIsCollegeModalOpen] = useState(false);
+  const [collegeName, setCollegeName] = useState("");
+  const [collegeCode, setCollegeCode] = useState("");
+  const [collegeSlug, setCollegeSlug] = useState("");
+  const [collegeDomain, setCollegeDomain] = useState("");
+  const [principalName, setPrincipalName] = useState("");
+  const [principalEmail, setPrincipalEmail] = useState("");
+  const [principalPassword, setPrincipalPassword] = useState("Password123!");
+  const [collegeError, setCollegeError] = useState("");
+  const [collegeSuccess, setCollegeSuccess] = useState("");
+  const [creatingCollege, setCreatingCollege] = useState(false);
+
+  const handleCreateCollegeAndPrincipal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCollegeError("");
+    setCollegeSuccess("");
+    setCreatingCollege(true);
+    try {
+      const collegePayload = {
+        name: collegeName,
+        code: collegeCode.toUpperCase(),
+        slug: collegeSlug.toLowerCase() || collegeCode.toLowerCase(),
+        domain: collegeDomain || `${collegeCode.toLowerCase()}.edu`,
+        status: "ACTIVE",
+      };
+      const createdCollege = await apiRequest<{ id: string; name: string; code: string }>("/colleges/", {
+        method: "POST",
+        body: JSON.stringify(collegePayload),
+      });
+
+      const parts = principalName.trim().split(" ");
+      const firstName = parts[0] || "Dr.";
+      const lastName = parts.slice(1).join(" ") || "Principal";
+
+      await apiRequest("/users/", {
+        method: "POST",
+        body: JSON.stringify({
+          email: principalEmail,
+          password: principalPassword,
+          first_name: firstName,
+          last_name: lastName,
+          role: "PRINCIPAL",
+          college: createdCollege.id,
+          status: "ACTIVE",
+        }),
+      });
+
+      setCollegeSuccess(`Successfully created ${createdCollege.name} and provisioned Principal (${principalEmail})!`);
+      setColleges((prev) => [...prev, createdCollege]);
+      setCollegeName("");
+      setCollegeCode("");
+      setCollegeSlug("");
+      setCollegeDomain("");
+      setPrincipalName("");
+      setPrincipalEmail("");
+    } catch (err: any) {
+      setCollegeError(err.message || "Failed to create college and principal.");
+    } finally {
+      setCreatingCollege(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* =========================================================================
@@ -209,17 +275,31 @@ export function AdminDashboard() {
           <div className="flex flex-wrap items-center gap-2">
             {/* Direct Access to Django Admin for Super Admin */}
             {isSuperAdmin && (
-              <a
-                href="http://127.0.0.1:8000/admin/"
-                target="_blank"
-                rel="noreferrer"
-                id="django-admin-btn"
-                className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md transition-all"
-                title="Direct Access to Django Administration"
-              >
-                <span>Django Admin</span>
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
+              <>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setCollegeError("");
+                    setCollegeSuccess("");
+                    setIsCollegeModalOpen(true);
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>+ Add College & Principal</span>
+                </Button>
+                <a
+                  href="http://127.0.0.1:8000/admin/"
+                  target="_blank"
+                  rel="noreferrer"
+                  id="django-admin-btn"
+                  className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md transition-all"
+                  title="Direct Access to Django Administration"
+                >
+                  <span>Django Admin</span>
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </>
             )}
 
             {/* Principal / HOD Camera Sighting with Photo Upload */}
@@ -752,6 +832,149 @@ export function AdminDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* =========================================================================
+          PROVISION COLLEGE & PRINCIPAL MODAL (SUPER ADMIN ONLY)
+         ========================================================================= */}
+      {isCollegeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border/80 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border/60 bg-muted/30">
+              <div className="flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-indigo-400" />
+                <h3 className="text-base font-semibold text-foreground">Provision College & Principal</h3>
+              </div>
+              <button
+                onClick={() => setIsCollegeModalOpen(false)}
+                className="text-muted-foreground hover:text-foreground transition-colors p-1"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCollegeAndPrincipal} className="p-6 space-y-4 text-xs">
+              {collegeError && (
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400">
+                  {collegeError}
+                </div>
+              )}
+              {collegeSuccess && (
+                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center gap-2">
+                  <Check className="h-4 w-4 shrink-0" />
+                  <span>{collegeSuccess}</span>
+                </div>
+              )}
+
+              <div className="text-muted-foreground font-semibold uppercase text-[10px] tracking-wider">
+                1. College Details
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1 col-span-2">
+                  <label className="text-muted-foreground font-medium">College Name *</label>
+                  <Input
+                    type="text"
+                    required
+                    placeholder="e.g. Apex Institute of Engineering"
+                    value={collegeName}
+                    onChange={(e) => {
+                      setCollegeName(e.target.value);
+                      if (!collegeSlug) {
+                        setCollegeSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));
+                      }
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-muted-foreground font-medium">College Code *</label>
+                  <Input
+                    type="text"
+                    required
+                    placeholder="e.g. AIE"
+                    value={collegeCode}
+                    onChange={(e) => setCollegeCode(e.target.value.toUpperCase())}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-muted-foreground font-medium">Slug *</label>
+                  <Input
+                    type="text"
+                    required
+                    placeholder="e.g. apex-eng"
+                    value={collegeSlug}
+                    onChange={(e) => setCollegeSlug(e.target.value.toLowerCase())}
+                  />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <label className="text-muted-foreground font-medium">Domain (Optional)</label>
+                  <Input
+                    type="text"
+                    placeholder="e.g. aie.edu.in"
+                    value={collegeDomain}
+                    onChange={(e) => setCollegeDomain(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 text-muted-foreground font-semibold uppercase text-[10px] tracking-wider border-t border-border/40">
+                2. Principal Account Credentials
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1 col-span-2">
+                  <label className="text-muted-foreground font-medium">Principal Full Name *</label>
+                  <Input
+                    type="text"
+                    required
+                    placeholder="e.g. Dr. Arthur Vance"
+                    value={principalName}
+                    onChange={(e) => setPrincipalName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <label className="text-muted-foreground font-medium">Principal Email *</label>
+                  <Input
+                    type="email"
+                    required
+                    placeholder="principal@aie.edu.in"
+                    value={principalEmail}
+                    onChange={(e) => setPrincipalEmail(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <label className="text-muted-foreground font-medium">Temporary Password *</label>
+                  <Input
+                    type="password"
+                    required
+                    placeholder="Minimum 8 characters"
+                    value={principalPassword}
+                    onChange={(e) => setPrincipalPassword(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="pt-4 flex items-center justify-end gap-2 border-t border-border/60">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsCollegeModalOpen(false)}
+                  disabled={creatingCollege}
+                >
+                  Close
+                </Button>
+                <Button
+                  type="submit"
+                  variant="gradient"
+                  disabled={creatingCollege}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white"
+                >
+                  {creatingCollege ? "Creating..." : "Create College & Principal"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
